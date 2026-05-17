@@ -7,7 +7,8 @@ const state = {
   removedDetectedNumbers: [],
 };
 
-const storageKey = "math-bingo-state-v1";
+const storageKey = "math-bingo-state-v2";
+localStorage.removeItem("math-bingo-state-v1");
 
 const els = {
   cardPhotos: document.querySelector("#cardPhotos"),
@@ -352,7 +353,7 @@ function handlePhotos(event) {
       <img src="${reader.result}" alt="Foto do cartao selecionado" />
       <div>
         <strong>${file.name}</strong>
-        <small>Vou ler os numeros automaticamente.</small>
+        <small>Olha para a foto e escreve os numeros na caixa acima.</small>
       </div>
     `;
     els.photoPreview.append(item);
