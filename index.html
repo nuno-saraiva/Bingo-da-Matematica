@@ -29,7 +29,7 @@
           <input id="cardPhotos" type="file" accept="image/*" multiple />
           <span class="upload-icon">+</span>
           <strong>Escolher fotos dos cartoes</strong>
-          <small>Depois confirma os numeros que aparecem na foto.</small>
+          <small>Depois confirmo os numeros automaticamente.</small>
         </label>
 
         <form id="cardForm" class="card-form">
@@ -37,11 +37,11 @@
             Nome do cartao
             <input id="cardName" type="text" placeholder="Ex.: Cartao da Matilde" />
           </label>
-          <label>
-            Numeros do cartao
-            <textarea id="cardNumbers" rows="3" placeholder="Ex.: 2 5 7 9 12 14 18 20"></textarea>
-          </label>
-          <button class="primary-button" type="submit">Guardar cartao</button>
+          <div class="ocr-box">
+            <div id="ocrStatus" class="ocr-status">Escolhe uma foto para eu ler os numeros.</div>
+            <div id="detectedNumbers" class="detected-numbers" aria-live="polite"></div>
+          </div>
+          <button id="saveCard" class="primary-button" type="submit" disabled>Guardar cartao detetado</button>
         </form>
 
         <div id="photoPreview" class="photo-preview" aria-live="polite"></div>
@@ -107,6 +107,7 @@
       </article>
     </template>
 
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
