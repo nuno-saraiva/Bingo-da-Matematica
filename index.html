@@ -29,7 +29,7 @@
           <input id="cardPhotos" type="file" accept="image/*" multiple />
           <span class="upload-icon">+</span>
           <strong>Escolher fotos dos cartoes</strong>
-          <small>Leio automaticamente numeros de 1 a 90.</small>
+          <small>Podes fotografar varios cartoes juntos.</small>
         </label>
 
         <form id="cardForm" class="card-form">
@@ -41,7 +41,7 @@
             <div id="ocrStatus" class="ocr-status">Escolhe uma foto para eu ler os numeros.</div>
             <div id="detectedNumbers" class="detected-numbers" aria-live="polite"></div>
           </div>
-          <button id="saveCard" class="primary-button" type="submit" disabled>Guardar cartao detetado</button>
+          <button id="saveCard" class="primary-button" type="submit" disabled>Guardar cartoes detetados</button>
         </form>
 
         <div id="photoPreview" class="photo-preview" aria-live="polite"></div>
@@ -108,6 +108,6 @@
     </template>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=ocr-3"></script>
+    <script src="app.js?v=ocr-4"></script>
   </body>
 </html>
