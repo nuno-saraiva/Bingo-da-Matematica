@@ -3,6 +3,8 @@ const state = {
   called: [],
   current: null,
   pendingPhoto: "",
+  detectedNumbers: [],
+  removedDetectedNumbers: [],
 };
 
 const storageKey = "math-bingo-state-v1";
@@ -12,7 +14,9 @@ const els = {
   photoPreview: document.querySelector("#photoPreview"),
   cardForm: document.querySelector("#cardForm"),
   cardName: document.querySelector("#cardName"),
-  cardNumbers: document.querySelector("#cardNumbers"),
+  detectedNumbers: document.querySelector("#detectedNumbers"),
+  ocrStatus: document.querySelector("#ocrStatus"),
+  saveCard: document.querySelector("#saveCard"),
   cardsGrid: document.querySelector("#cardsGrid"),
   cardCount: document.querySelector("#cardCount"),
   remainingCount: document.querySelector("#remainingCount"),
@@ -55,6 +59,10 @@ function parseNumbers(value) {
     .map(Number)
     .filter((num) => Number.isInteger(num) && num > 0 && num <= 99))]
     .sort((a, b) => a - b);
+}
+
+function activeDetectedNumbers() {
+  return state.detectedNumbers.filter((num) => !state.removedDetectedNumbers.includes(num));
 }
 
 function allNumbers() {
@@ -168,6 +176,108 @@ function renderCards() {
   updateCounts();
 }
 
+function setOcrStatus(message, tone = "") {
+  els.ocrStatus.textContent = message;
+  els.ocrStatus.className = `ocr-status ${tone}`.trim();
+}
+
+function renderDetectedNumbers() {
+  els.detectedNumbers.innerHTML = "";
+
+  state.detectedNumbers.forEach((number) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "detected-chip";
+    chip.textContent = number;
+    chip.title = `Ignorar ${number}`;
+    if (state.removedDetectedNumbers.includes(number)) chip.classList.add("removed");
+    chip.addEventListener("click", () => toggleDetectedNumber(number));
+    els.detectedNumbers.append(chip);
+  });
+
+  els.saveCard.disabled = activeDetectedNumbers().length === 0;
+}
+
+function toggleDetectedNumber(number) {
+  if (state.removedDetectedNumbers.includes(number)) {
+    state.removedDetectedNumbers = state.removedDetectedNumbers.filter((num) => num !== number);
+  } else {
+    state.removedDetectedNumbers.push(number);
+  }
+  renderDetectedNumbers();
+}
+
+async function recognizeNumbersFromPhoto(photoDataUrl) {
+  state.detectedNumbers = [];
+  state.removedDetectedNumbers = [];
+  renderDetectedNumbers();
+
+  if (!window.Tesseract) {
+    setOcrStatus("Nao consegui carregar o leitor automatico. Confirma a ligacao a internet.", "warn");
+    return;
+  }
+
+  setOcrStatus("A ler numeros da foto...", "busy");
+
+  try {
+    const processedPhoto = await prepareImageForOcr(photoDataUrl);
+    const result = await window.Tesseract.recognize(processedPhoto, "eng", {
+      logger: (progress) => {
+        if (progress.status === "recognizing text") {
+          const percent = Math.round((progress.progress || 0) * 100);
+          setOcrStatus(`A ler numeros da foto... ${percent}%`, "busy");
+        }
+      },
+    });
+
+    const numbers = parseNumbers(result.data.text);
+    state.detectedNumbers = numbers;
+    state.removedDetectedNumbers = [];
+    renderDetectedNumbers();
+
+    if (numbers.length === 0) {
+      setOcrStatus("Nao encontrei numeros nesta foto. Tenta uma foto mais direita e com boa luz.", "warn");
+      return;
+    }
+
+    setOcrStatus(`Detetei ${numbers.length} numeros. Toca num numero se quiseres ignora-lo.`, "good");
+  } catch (error) {
+    setOcrStatus("Nao consegui ler esta foto. Tenta aproximar mais o cartao.", "warn");
+  }
+}
+
+function prepareImageForOcr(photoDataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => {
+      const maxSide = 1800;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
+
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      for (let index = 0; index < imageData.data.length; index += 4) {
+        const red = imageData.data[index];
+        const green = imageData.data[index + 1];
+        const blue = imageData.data[index + 2];
+        const gray = red * 0.299 + green * 0.587 + blue * 0.114;
+        const contrast = gray > 150 ? 255 : 0;
+        imageData.data[index] = contrast;
+        imageData.data[index + 1] = contrast;
+        imageData.data[index + 2] = contrast;
+      }
+      context.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    });
+    image.addEventListener("error", reject);
+    image.src = photoDataUrl;
+  });
+}
+
 function renderQuestion() {
   if (!state.current) {
     els.question.textContent = "?";
@@ -202,10 +312,9 @@ function toggleCalled(number) {
 function addCard(event) {
   event.preventDefault();
 
-  const numbers = parseNumbers(els.cardNumbers.value);
+  const numbers = activeDetectedNumbers();
   if (numbers.length === 0) {
-    els.cardNumbers.focus();
-    els.statusText.textContent = "Escreve pelo menos um numero do cartao.";
+    els.statusText.textContent = "Escolhe uma foto e espera que os numeros sejam detetados.";
     return;
   }
 
@@ -217,8 +326,12 @@ function addCard(event) {
   });
 
   state.pendingPhoto = "";
+  state.detectedNumbers = [];
+  state.removedDetectedNumbers = [];
   els.cardForm.reset();
   els.photoPreview.innerHTML = "";
+  setOcrStatus("Escolhe uma foto para eu ler os numeros.");
+  renderDetectedNumbers();
   els.statusText.textContent = "Cartao guardado. Ja podes iniciar a jogada.";
   saveState();
   renderCards();
@@ -239,7 +352,7 @@ function handlePhotos(event) {
       <img src="${reader.result}" alt="Foto do cartao selecionado" />
       <div>
         <strong>${file.name}</strong>
-        <small>Olha para a foto e escreve os numeros na caixa acima.</small>
+        <small>Vou ler os numeros automaticamente.</small>
       </div>
     `;
     els.photoPreview.append(item);
@@ -247,6 +360,8 @@ function handlePhotos(event) {
     if (!els.cardName.value.trim()) {
       els.cardName.value = file.name.replace(/\.[^.]+$/, "");
     }
+
+    recognizeNumbersFromPhoto(reader.result);
   });
   reader.readAsDataURL(file);
 }
@@ -307,9 +422,13 @@ function resetAll() {
   state.called = [];
   state.current = null;
   state.pendingPhoto = "";
+  state.detectedNumbers = [];
+  state.removedDetectedNumbers = [];
   localStorage.removeItem(storageKey);
   els.cardForm.reset();
   els.photoPreview.innerHTML = "";
+  setOcrStatus("Escolhe uma foto para eu ler os numeros.");
+  renderDetectedNumbers();
   els.statusText.textContent = "Tudo limpo. Adiciona novos cartoes.";
   renderQuestion();
   renderCards();
@@ -326,4 +445,5 @@ els.avoidRepeats.addEventListener("change", updateCounts);
 
 loadState();
 renderQuestion();
+renderDetectedNumbers();
 renderCards();
