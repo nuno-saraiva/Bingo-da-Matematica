@@ -7,8 +7,9 @@ const state = {
   removedDetectedNumbers: [],
 };
 
-const storageKey = "math-bingo-state-v2";
+const storageKey = "math-bingo-state-v3";
 localStorage.removeItem("math-bingo-state-v1");
+localStorage.removeItem("math-bingo-state-v2");
 
 const els = {
   cardPhotos: document.querySelector("#cardPhotos"),
@@ -58,7 +59,7 @@ function saveState() {
 function parseNumbers(value) {
   return [...new Set((value.match(/\d+/g) || [])
     .map(Number)
-    .filter((num) => Number.isInteger(num) && num > 0 && num <= 99))]
+    .filter((num) => Number.isInteger(num) && num > 0 && num <= 90))]
     .sort((a, b) => a - b);
 }
 
@@ -81,18 +82,26 @@ function playableNumbers() {
 function makeProblem(target) {
   const level = els.levelSelect.value;
 
-  if (level === "easy" || target <= 20) {
+  if (level === "easy" && target <= 20) {
     return makeEasyProblem(target);
   }
 
-  const tens = Math.floor(target / 10) * 10;
+  return makeNinetyProblem(target);
+}
+
+function makeNinetyProblem(target) {
+  const options = [];
+  const tens = Math.max(10, Math.floor(target / 10) * 10);
   const ones = target - tens;
-  const options = [
-    `${tens} + ${ones}`,
-    `${target + 1} - 1`,
-    `${target - 2} + 2`,
-    `${Math.max(10, tens - 10)} + ${target - Math.max(10, tens - 10)}`,
-  ].filter((problem) => !problem.includes("+ 0"));
+
+  if (ones > 0) options.push(`${tens} + ${ones}`);
+  if (target > 10) options.push(`${target - 10} + 10`);
+  if (target <= 80) options.push(`${target + 10} - 10`);
+  if (target > 5) options.push(`${target - 5} + 5`);
+  if (target <= 85) options.push(`${target + 5} - 5`);
+  if (target > 2) options.push(`${target - 2} + 2`);
+
+  if (options.length === 0) return makeEasyProblem(target);
 
   return options[Math.floor(Math.random() * options.length)];
 }
@@ -221,37 +230,44 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
   setOcrStatus("A ler numeros da foto...", "busy");
 
   try {
-    const processedPhoto = await prepareImageForOcr(photoDataUrl);
-    const result = await window.Tesseract.recognize(processedPhoto, "eng", {
-      logger: (progress) => {
-        if (progress.status === "recognizing text") {
-          const percent = Math.round((progress.progress || 0) * 100);
-          setOcrStatus(`A ler numeros da foto... ${percent}%`, "busy");
-        }
-      },
-    });
+    const images = await prepareImagesForOcr(photoDataUrl);
+    const reads = [];
 
-    const numbers = parseNumbers(result.data.text);
+    for (let index = 0; index < images.length; index += 1) {
+      const result = await window.Tesseract.recognize(images[index], "eng", {
+        tessedit_char_whitelist: "0123456789",
+        logger: (progress) => {
+          if (progress.status === "recognizing text") {
+            const percent = Math.round((progress.progress || 0) * 100);
+            setOcrStatus(`A ler numeros... ${index + 1}/${images.length}, ${percent}%`, "busy");
+          }
+        },
+      });
+
+      reads.push(result.data.text);
+    }
+
+    const numbers = parseNumbers(reads.join(" "));
     state.detectedNumbers = numbers;
     state.removedDetectedNumbers = [];
     renderDetectedNumbers();
 
     if (numbers.length === 0) {
-      setOcrStatus("Nao encontrei numeros nesta foto. Tenta uma foto mais direita e com boa luz.", "warn");
+      setOcrStatus("Nao encontrei numeros de 1 a 90. Tenta uma foto mais perto, direita e com boa luz.", "warn");
       return;
     }
 
-    setOcrStatus(`Detetei ${numbers.length} numeros. Toca num numero se quiseres ignora-lo.`, "good");
+    setOcrStatus(`Detetei ${numbers.length} numeros de 1 a 90. Toca num numero se quiseres ignora-lo.`, "good");
   } catch (error) {
     setOcrStatus("Nao consegui ler esta foto. Tenta aproximar mais o cartao.", "warn");
   }
 }
 
-function prepareImageForOcr(photoDataUrl) {
+function prepareImagesForOcr(photoDataUrl) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.addEventListener("load", () => {
-      const maxSide = 1800;
+      const maxSide = 2200;
       const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(image.width * scale);
@@ -259,24 +275,51 @@ function prepareImageForOcr(photoDataUrl) {
 
       const context = canvas.getContext("2d", { willReadFrequently: true });
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const original = context.getImageData(0, 0, canvas.width, canvas.height);
 
-      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-      for (let index = 0; index < imageData.data.length; index += 4) {
-        const red = imageData.data[index];
-        const green = imageData.data[index + 1];
-        const blue = imageData.data[index + 2];
-        const gray = red * 0.299 + green * 0.587 + blue * 0.114;
-        const contrast = gray > 150 ? 255 : 0;
-        imageData.data[index] = contrast;
-        imageData.data[index + 1] = contrast;
-        imageData.data[index + 2] = contrast;
-      }
-      context.putImageData(imageData, 0, 0);
-      resolve(canvas.toDataURL("image/png"));
+      resolve([
+        makeOcrVariant(original, canvas.width, canvas.height, "contrast"),
+        makeOcrVariant(original, canvas.width, canvas.height, "red-green"),
+        makeOcrVariant(original, canvas.width, canvas.height, "dark-text"),
+      ]);
     });
     image.addEventListener("error", reject);
     image.src = photoDataUrl;
   });
+}
+
+function makeOcrVariant(source, width, height, mode) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const imageData = new ImageData(new Uint8ClampedArray(source.data), width, height);
+
+  for (let index = 0; index < imageData.data.length; index += 4) {
+    const red = imageData.data[index];
+    const green = imageData.data[index + 1];
+    const blue = imageData.data[index + 2];
+    const gray = red * 0.299 + green * 0.587 + blue * 0.114;
+    let ink = false;
+
+    if (mode === "red-green") {
+      const redInk = red > green * 1.18 && red > blue * 1.18 && red > 70;
+      const greenInk = green > red * 1.08 && green > blue * 1.08 && green > 55;
+      ink = redInk || greenInk;
+    } else if (mode === "dark-text") {
+      ink = gray < 135;
+    } else {
+      ink = gray < 170;
+    }
+
+    const output = ink ? 0 : 255;
+    imageData.data[index] = output;
+    imageData.data[index + 1] = output;
+    imageData.data[index + 2] = output;
+  }
+
+  context.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
 }
 
 function renderQuestion() {
@@ -353,7 +396,7 @@ function handlePhotos(event) {
       <img src="${reader.result}" alt="Foto do cartao selecionado" />
       <div>
         <strong>${file.name}</strong>
-        <small>Olha para a foto e escreve os numeros na caixa acima.</small>
+        <small>Vou procurar numeros de 1 a 90 nesta foto.</small>
       </div>
     `;
     els.photoPreview.append(item);
