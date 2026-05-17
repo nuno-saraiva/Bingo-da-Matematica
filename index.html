@@ -29,7 +29,7 @@
           <input id="cardPhotos" type="file" accept="image/*" multiple />
           <span class="upload-icon">+</span>
           <strong>Escolher fotos dos cartoes</strong>
-          <small>Depois confirma os numeros que aparecem na foto.</small>
+          <small>Leio automaticamente numeros de 1 a 90.</small>
         </label>
 
         <form id="cardForm" class="card-form">
@@ -71,8 +71,8 @@
           <label>
             Nivel
             <select id="levelSelect">
-              <option value="easy">6 anos: ate 20</option>
-              <option value="tens">Dezenas simples: ate 90</option>
+              <option value="tens">6 anos: ate 90</option>
+              <option value="easy">Muito facil: ate 20</option>
             </select>
           </label>
           <label class="check-label">
@@ -108,6 +108,6 @@
     </template>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=ocr-2"></script>
+    <script src="app.js?v=ocr-3"></script>
   </body>
 </html>
