@@ -356,7 +356,7 @@ function renderQuestion() {
   }
 
   els.question.textContent = `${state.current.problem} = ?`;
-  els.answer.textContent = `Resultado: ${state.current.answer}`;
+  els.answer.textContent = `Solucao: ${state.current.answer}`;
   els.answer.hidden = !state.current.revealed;
 }
 
@@ -483,7 +483,7 @@ function playRound() {
     revealed: false,
   };
 
-  els.statusText.textContent = "Resolve a conta e procura o resultado no cartao.";
+  els.statusText.textContent = "Resolve a conta. Quando acabares, carrega em Ver solucao.";
   saveState();
   renderQuestion();
   renderCards();
@@ -497,7 +497,7 @@ function revealAnswer() {
     state.called.push(state.current.answer);
   }
 
-  els.statusText.textContent = "Resultado marcado nos cartoes.";
+  els.statusText.textContent = "Agora podes confirmar se acertaste.";
   saveState();
   renderQuestion();
   renderCards();
