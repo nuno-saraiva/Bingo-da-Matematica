@@ -3,13 +3,15 @@ const state = {
   called: [],
   current: null,
   pendingPhoto: "",
+  pendingPhotos: [],
   detectedNumbers: [],
   removedDetectedNumbers: [],
 };
 
-const storageKey = "math-bingo-state-v3";
+const storageKey = "math-bingo-state-v4";
 localStorage.removeItem("math-bingo-state-v1");
 localStorage.removeItem("math-bingo-state-v2");
+localStorage.removeItem("math-bingo-state-v3");
 
 const els = {
   cardPhotos: document.querySelector("#cardPhotos"),
@@ -60,6 +62,12 @@ function parseNumbers(value) {
   return [...new Set((value.match(/\d+/g) || [])
     .map(Number)
     .filter((num) => Number.isInteger(num) && num > 0 && num <= 90))]
+    .sort((a, b) => a - b);
+}
+
+function mergeNumbers(existing, incoming) {
+  return [...new Set([...existing, ...incoming])]
+    .filter((num) => num > 0 && num <= 90)
     .sort((a, b) => a - b);
 }
 
@@ -218,10 +226,6 @@ function toggleDetectedNumber(number) {
 }
 
 async function recognizeNumbersFromPhoto(photoDataUrl) {
-  state.detectedNumbers = [];
-  state.removedDetectedNumbers = [];
-  renderDetectedNumbers();
-
   if (!window.Tesseract) {
     setOcrStatus("Nao consegui carregar o leitor automatico. Confirma a ligacao a internet.", "warn");
     return;
@@ -236,6 +240,7 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
     for (let index = 0; index < images.length; index += 1) {
       const result = await window.Tesseract.recognize(images[index], "eng", {
         tessedit_char_whitelist: "0123456789",
+        tessedit_pageseg_mode: "6",
         logger: (progress) => {
           if (progress.status === "recognizing text") {
             const percent = Math.round((progress.progress || 0) * 100);
@@ -248,16 +253,15 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
     }
 
     const numbers = parseNumbers(reads.join(" "));
-    state.detectedNumbers = numbers;
-    state.removedDetectedNumbers = [];
+    state.detectedNumbers = mergeNumbers(state.detectedNumbers, numbers);
     renderDetectedNumbers();
 
-    if (numbers.length === 0) {
+    if (state.detectedNumbers.length === 0) {
       setOcrStatus("Nao encontrei numeros de 1 a 90. Tenta uma foto mais perto, direita e com boa luz.", "warn");
       return;
     }
 
-    setOcrStatus(`Detetei ${numbers.length} numeros de 1 a 90. Toca num numero se quiseres ignora-lo.`, "good");
+    setOcrStatus(`Detetei ${state.detectedNumbers.length} numeros de 1 a 90. Toca num numero se quiseres ignora-lo.`, "good");
   } catch (error) {
     setOcrStatus("Nao consegui ler esta foto. Tenta aproximar mais o cartao.", "warn");
   }
@@ -276,24 +280,40 @@ function prepareImagesForOcr(photoDataUrl) {
       const context = canvas.getContext("2d", { willReadFrequently: true });
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const original = context.getImageData(0, 0, canvas.width, canvas.height);
+      const regions = [
+        original,
+        cropImageData(original, canvas.width, canvas.height, 0, 0, canvas.width, Math.round(canvas.height * 0.55)),
+        cropImageData(original, canvas.width, canvas.height, 0, Math.round(canvas.height * 0.38), canvas.width, Math.round(canvas.height * 0.62)),
+        cropImageData(original, canvas.width, canvas.height, 0, Math.round(canvas.height * 0.25), canvas.width, Math.round(canvas.height * 0.5)),
+        cropImageData(original, canvas.width, canvas.height, 0, Math.round(canvas.height * 0.5), canvas.width, Math.round(canvas.height * 0.5)),
+      ];
 
-      resolve([
-        makeOcrVariant(original, canvas.width, canvas.height, "contrast"),
-        makeOcrVariant(original, canvas.width, canvas.height, "red-green"),
-        makeOcrVariant(original, canvas.width, canvas.height, "dark-text"),
-      ]);
+      resolve(regions.flatMap((region) => [
+        makeOcrVariant(region.data, region.width, region.height, "contrast"),
+        makeOcrVariant(region.data, region.width, region.height, "red-green"),
+        makeOcrVariant(region.data, region.width, region.height, "dark-text"),
+      ]));
     });
     image.addEventListener("error", reject);
     image.src = photoDataUrl;
   });
 }
 
+function cropImageData(source, sourceWidth, sourceHeight, x, y, width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = sourceWidth;
+  canvas.height = sourceHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.putImageData(source, 0, 0);
+  return context.getImageData(x, y, width, height);
+}
+
 function makeOcrVariant(source, width, height, mode) {
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = width * 2;
+  canvas.height = height * 2;
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  const imageData = new ImageData(new Uint8ClampedArray(source.data), width, height);
+  const imageData = new ImageData(new Uint8ClampedArray(source), width, height);
 
   for (let index = 0; index < imageData.data.length; index += 4) {
     const red = imageData.data[index];
@@ -318,7 +338,12 @@ function makeOcrVariant(source, width, height, mode) {
     imageData.data[index + 2] = output;
   }
 
-  context.putImageData(imageData, 0, 0);
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = width;
+  sourceCanvas.height = height;
+  sourceCanvas.getContext("2d").putImageData(imageData, 0, 0);
+  context.imageSmoothingEnabled = false;
+  context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/png");
 }
 
@@ -364,12 +389,13 @@ function addCard(event) {
 
   state.cards.push({
     id: crypto.randomUUID(),
-    name: els.cardName.value.trim() || `Cartao ${state.cards.length + 1}`,
+    name: els.cardName.value.trim() || `Cartoes ${state.cards.length + 1}`,
     numbers,
-    photo: state.pendingPhoto,
+    photo: state.pendingPhotos[0] || state.pendingPhoto,
   });
 
   state.pendingPhoto = "";
+  state.pendingPhotos = [];
   state.detectedNumbers = [];
   state.removedDetectedNumbers = [];
   els.cardForm.reset();
@@ -381,33 +407,52 @@ function addCard(event) {
   renderCards();
 }
 
-function handlePhotos(event) {
-  const [file] = [...event.target.files];
-  if (!file) return;
+async function handlePhotos(event) {
+  const files = [...event.target.files];
+  if (files.length === 0) return;
 
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    state.pendingPhoto = reader.result;
-    els.photoPreview.innerHTML = "";
+  state.pendingPhoto = "";
+  state.pendingPhotos = [];
+  state.detectedNumbers = [];
+  state.removedDetectedNumbers = [];
+  renderDetectedNumbers();
+  els.photoPreview.innerHTML = "";
+
+  if (!els.cardName.value.trim()) {
+    els.cardName.value = files.length === 1
+      ? files[0].name.replace(/\.[^.]+$/, "")
+      : `Cartoes ${state.cards.length + 1}`;
+  }
+
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const photo = await readFileAsDataUrl(file);
+    state.pendingPhoto = photo;
+    state.pendingPhotos.push(photo);
 
     const item = document.createElement("div");
     item.className = "photo-item";
     item.innerHTML = `
-      <img src="${reader.result}" alt="Foto do cartao selecionado" />
+      <img src="${photo}" alt="Foto do cartao selecionado" />
       <div>
         <strong>${file.name}</strong>
-        <small>Vou procurar numeros de 1 a 90 nesta foto.</small>
+        <small>A procurar numeros de 1 a 90 nesta foto.</small>
       </div>
     `;
     els.photoPreview.append(item);
 
-    if (!els.cardName.value.trim()) {
-      els.cardName.value = file.name.replace(/\.[^.]+$/, "");
-    }
+    setOcrStatus(`A ler foto ${index + 1}/${files.length}...`, "busy");
+    await recognizeNumbersFromPhoto(photo);
+  }
+}
 
-    recognizeNumbersFromPhoto(reader.result);
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", reject);
+    reader.readAsDataURL(file);
   });
-  reader.readAsDataURL(file);
 }
 
 function startGame() {
@@ -466,6 +511,7 @@ function resetAll() {
   state.called = [];
   state.current = null;
   state.pendingPhoto = "";
+  state.pendingPhotos = [];
   state.detectedNumbers = [];
   state.removedDetectedNumbers = [];
   localStorage.removeItem(storageKey);
