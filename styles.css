@@ -222,6 +222,59 @@ button:disabled {
   opacity: 0.48;
 }
 
+.ocr-box {
+  display: grid;
+  gap: 0.65rem;
+  min-height: 104px;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.ocr-status {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.ocr-status.busy {
+  color: var(--blue);
+}
+
+.ocr-status.good {
+  color: var(--teal);
+}
+
+.ocr-status.warn {
+  color: #a33021;
+}
+
+.detected-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  min-height: 42px;
+}
+
+.detected-chip {
+  min-width: 42px;
+  min-height: 42px;
+  border: 1px solid #9cc9b0;
+  border-radius: 8px;
+  background: var(--mint);
+  color: #116149;
+  font-size: 1.08rem;
+  font-weight: 900;
+}
+
+.detected-chip.removed {
+  border-color: #e8a79c;
+  background: #fff0ed;
+  color: #9f2c1e;
+  text-decoration: line-through;
+}
+
 .photo-preview {
   display: grid;
   gap: 0.65rem;
