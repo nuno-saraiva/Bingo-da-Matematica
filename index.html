@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bingo da Matematica</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Bingo da matematica</p>
+        <h1>Joga com contas simples e os numeros dos cartoes.</h1>
+      </div>
+      <button id="resetAll" class="ghost-button" type="button" title="Limpar jogo">Limpar</button>
+    </header>
+
+    <main class="app-shell">
+      <section class="setup-panel" aria-labelledby="setup-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">1. Cartoes</p>
+            <h2 id="setup-title">Adicionar fotos</h2>
+          </div>
+          <span id="cardCount" class="counter">0 cartoes</span>
+        </div>
+
+        <label class="upload-zone" for="cardPhotos">
+          <input id="cardPhotos" type="file" accept="image/*" multiple />
+          <span class="upload-icon">+</span>
+          <strong>Escolher fotos dos cartoes</strong>
+          <small>Depois confirma os numeros que aparecem na foto.</small>
+        </label>
+
+        <form id="cardForm" class="card-form">
+          <label>
+            Nome do cartao
+            <input id="cardName" type="text" placeholder="Ex.: Cartao da Matilde" />
+          </label>
+          <label>
+            Numeros do cartao
+            <textarea id="cardNumbers" rows="3" placeholder="Ex.: 2 5 7 9 12 14 18 20"></textarea>
+          </label>
+          <button class="primary-button" type="submit">Guardar cartao</button>
+        </form>
+
+        <div id="photoPreview" class="photo-preview" aria-live="polite"></div>
+      </section>
+
+      <section class="game-panel" aria-labelledby="game-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">2. Jogada</p>
+            <h2 id="game-title">Conta da vez</h2>
+          </div>
+          <span id="remainingCount" class="counter">0 numeros</span>
+        </div>
+
+        <div class="game-board">
+          <div id="statusText" class="status-text">Adiciona pelo menos um cartao para comecar.</div>
+          <div id="question" class="question" aria-live="assertive">?</div>
+          <div id="answer" class="answer" hidden></div>
+          <div class="game-actions">
+            <button id="startGame" class="secondary-button" type="button">Iniciar jogada</button>
+            <button id="playRound" class="primary-button" type="button" disabled>Jogar</button>
+            <button id="revealAnswer" class="ghost-button" type="button" disabled>Revelar</button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <label>
+            Nivel
+            <select id="levelSelect">
+              <option value="easy">6 anos: ate 20</option>
+              <option value="tens">Dezenas simples: ate 90</option>
+            </select>
+          </label>
+          <label class="check-label">
+            <input id="avoidRepeats" type="checkbox" checked />
+            Sem repetir resultados
+          </label>
+        </div>
+      </section>
+    </main>
+
+    <section class="cards-area" aria-labelledby="cards-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">3. Marcar</p>
+          <h2 id="cards-title">Cartoes em jogo</h2>
+        </div>
+      </div>
+      <div id="cardsGrid" class="cards-grid"></div>
+    </section>
+
+    <template id="cardTemplate">
+      <article class="bingo-card">
+        <div class="bingo-card-head">
+          <img alt="" />
+          <div>
+            <h3></h3>
+            <p></p>
+          </div>
+          <button type="button" class="remove-card" title="Remover cartao">x</button>
+        </div>
+        <div class="number-grid"></div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
