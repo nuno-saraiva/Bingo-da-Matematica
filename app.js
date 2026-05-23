@@ -396,6 +396,7 @@ function addCellCandidate(cellCandidates, cell, number, confidence, bbox) {
   };
   const boxHeight = Math.max(1, bbox.y1 - bbox.y0);
   const cellHeight = Math.max(1, cell.height);
+  if (boxHeight < cellHeight * 0.2) return;
   const relativeCenterY = ((bbox.y0 + bbox.y1) / 2 - cell.top) / cellHeight;
   const mainNumberBonus = boxHeight > cellHeight * 0.28 && relativeCenterY < 0.72 ? 35 : 0;
   previous.count += 1;
@@ -554,7 +555,7 @@ function detectCardBands(source, width, height) {
   });
 
   return merged
-    .filter((band) => band.height >= minBandHeight && band.height <= height * 0.45)
+    .filter((band) => band.height >= minBandHeight && band.height <= height * 0.32)
     .sort((a, b) => b.height - a.height)
     .slice(0, 20)
     .sort((a, b) => a.y - b.y);
