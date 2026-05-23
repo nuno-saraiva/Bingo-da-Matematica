@@ -18,6 +18,8 @@ const els = {
   photoPreview: document.querySelector("#photoPreview"),
   cardForm: document.querySelector("#cardForm"),
   cardName: document.querySelector("#cardName"),
+  expectedCards: document.querySelector("#expectedCards"),
+  expectedStatus: document.querySelector("#expectedStatus"),
   detectedNumbers: document.querySelector("#detectedNumbers"),
   ocrStatus: document.querySelector("#ocrStatus"),
   saveCard: document.querySelector("#saveCard"),
@@ -73,6 +75,22 @@ function mergeNumbers(existing, incoming) {
 
 function activeDetectedNumbers() {
   return state.detectedNumbers.filter((num) => !state.removedDetectedNumbers.includes(num));
+}
+
+function expectedNumberCount() {
+  const cardCount = Number.parseInt(els.expectedCards.value, 10);
+  return Math.max(1, Number.isFinite(cardCount) ? cardCount : 1) * 15;
+}
+
+function updateExpectedStatus() {
+  const expected = expectedNumberCount();
+  const actual = activeDetectedNumbers().length;
+  const missing = Math.max(0, expected - actual);
+
+  els.expectedStatus.className = `expected-status ${missing === 0 ? "good" : "warn"}`;
+  els.expectedStatus.textContent = missing === 0
+    ? `Ok: ${actual}/${expected} numeros`
+    : `Faltam ${missing}: ${actual}/${expected} numeros`;
 }
 
 function allNumbers() {
@@ -226,6 +244,7 @@ function renderDetectedNumbers() {
   });
 
   els.saveCard.disabled = activeDetectedNumbers().length === 0;
+  updateExpectedStatus();
 }
 
 function toggleDetectedNumber(number) {
@@ -301,7 +320,13 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
       return;
     }
 
-    setOcrStatus(`Detetei ${state.detectedNumbers.length} numeros de 1 a 90. Toca num numero se quiseres ignora-lo.`, "good");
+    const expected = expectedNumberCount();
+    const detected = state.detectedNumbers.length;
+    const tone = detected >= expected ? "good" : "warn";
+    const message = detected >= expected
+      ? `Detetei ${detected}/${expected} numeros. Toca num numero se quiseres ignora-lo.`
+      : `Detetei ${detected}/${expected} numeros. Toca na foto para acrescentar os que faltam.`;
+    setOcrStatus(message, tone);
   } catch (error) {
     setOcrStatus("Nao consegui ler esta foto. Tenta aproximar mais o cartao.", "warn");
   }
@@ -427,6 +452,14 @@ function addCard(event) {
     return;
   }
 
+  const expected = expectedNumberCount();
+  if (numbers.length < expected) {
+    const confirmed = window.confirm(
+      `Foram detetados ${numbers.length} de ${expected} numeros esperados. Guardar mesmo assim?`
+    );
+    if (!confirmed) return;
+  }
+
   state.cards.push({
     id: crypto.randomUUID(),
     name: els.cardName.value.trim() || `Cartoes ${state.cards.length + 1}`,
@@ -441,6 +474,7 @@ function addCard(event) {
   els.cardForm.reset();
   els.photoPreview.innerHTML = "";
   setOcrStatus("Escolhe uma foto para eu ler os numeros.");
+  els.expectedCards.value = "1";
   renderDetectedNumbers();
   els.statusText.textContent = "Cartao guardado. Ja podes iniciar a jogada.";
   saveState();
@@ -573,6 +607,7 @@ els.revealAnswer.addEventListener("click", revealAnswer);
 els.resetAll.addEventListener("click", resetAll);
 els.levelSelect.addEventListener("change", updateCounts);
 els.avoidRepeats.addEventListener("change", updateCounts);
+els.expectedCards.addEventListener("input", updateExpectedStatus);
 
 loadState();
 renderQuestion();
