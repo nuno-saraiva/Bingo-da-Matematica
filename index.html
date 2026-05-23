@@ -31,7 +31,7 @@
           <small>Podes usar a camara ou escolher fotos da galeria.</small>
           <div class="upload-actions">
             <label class="upload-button" for="cameraPhotos">
-              <input id="cameraPhotos" type="file" accept="image/*" capture="environment" onchange="handlePhotos(event)" />
+              <input id="cameraPhotos" type="file" accept="image/*" capture="environment" />
               Usar camara
             </label>
             <label class="upload-button" for="cardPhotos">
@@ -48,12 +48,10 @@
           </label>
           <div class="ocr-box">
             <div id="ocrStatus" class="ocr-status">Escolhe uma foto para eu ler os numeros.</div>
-            <div class="expected-row">
-              <label>
-                Cartoes na foto
-                <input id="expectedCards" type="number" min="1" max="20" value="1" />
-              </label>
-              <span id="expectedStatus" class="expected-status">Esperado: 15 numeros</span>
+            <input id="expectedCards" type="hidden" value="1" />
+            <div class="auto-detect-row">
+              <span>Cartoes detetados automaticamente</span>
+              <strong id="expectedStatus" class="expected-status">A aguardar foto</strong>
             </div>
             <div id="detectedNumbers" class="detected-numbers" aria-live="polite"></div>
           </div>
@@ -124,6 +122,6 @@
     </template>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=ocr-10"></script>
+    <script src="app.js?v=ocr-11"></script>
   </body>
 </html>
