@@ -143,7 +143,8 @@ function makeAddSubProblem(target, maxFirst, maxTerm) {
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
-}\n
+}
+
 function makeEasyProblem(target) {
   if (target <= 2) return `${target + 1} - 1`;
 
@@ -366,12 +367,25 @@ function selectCardNumbers(candidates) {
     .map((item) => ({
       number: item.number,
       count: item.count,
+      confidence: item.confidence,
       score: item.count * 100 + item.confidence,
     }))
     .sort((a, b) => b.score - a.score);
 
-  const reliable = scored.filter((item) => item.count >= 2);
-  const source = reliable.length >= 10 ? reliable : scored;
+  const strongTwoDigitNumbers = scored
+    .filter((item) => item.number >= 10 && item.count >= 2)
+    .map((item) => String(item.number));
+  const appearsInsideStrongNumber = (number) => strongTwoDigitNumbers
+    .some((candidate) => candidate.includes(String(number)));
+
+  const filtered = scored.filter((item) => {
+    if (item.number >= 10) return true;
+    if (item.count >= 3) return true;
+    return !appearsInsideStrongNumber(item.number);
+  });
+
+  const reliable = filtered.filter((item) => item.count >= 2);
+  const source = reliable.length >= 10 ? reliable : filtered;
 
   return source
     .slice(0, 15)
@@ -574,7 +588,6 @@ async function handlePhotos(event) {
   state.pendingPhoto = "";
   state.pendingPhotos = [];
   state.detectedNumbers = [];
-  state.detectedCardCount = 1;
   state.removedDetectedNumbers = [];
   renderDetectedNumbers();
   els.photoPreview.innerHTML = "";
