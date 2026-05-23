@@ -250,6 +250,35 @@ button:disabled {
   color: #a33021;
 }
 
+.expected-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.expected-row input {
+  min-height: 2.35rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.expected-status {
+  display: flex;
+  align-items: center;
+  min-height: 2.35rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.expected-status.good {
+  color: var(--teal);
+}
+
+.expected-status.warn {
+  color: #a33021;
+}
+
 .detected-numbers {
   display: flex;
   flex-wrap: wrap;
@@ -296,7 +325,13 @@ button:disabled {
   width: 72px;
   height: 72px;
   border-radius: 6px;
+  cursor: pointer;
   object-fit: cover;
+}
+
+.photo-item img:focus {
+  outline: 3px solid rgba(47, 128, 237, 0.35);
+  outline-offset: 2px;
 }
 
 .game-board {
@@ -463,6 +498,10 @@ button:disabled {
 @media (max-width: 560px) {
   .app-header {
     flex-direction: column;
+  }
+
+  .expected-row {
+    grid-template-columns: 1fr;
   }
 
   .question {
