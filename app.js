@@ -5,6 +5,7 @@ const state = {
   pendingPhoto: "",
   pendingPhotos: [],
   detectedNumbers: [],
+  detectedCardCount: 1,
   removedDetectedNumbers: [],
 };
 
@@ -89,8 +90,8 @@ function updateExpectedStatus() {
 
   els.expectedStatus.className = `expected-status ${missing === 0 ? "good" : "warn"}`;
   els.expectedStatus.textContent = missing === 0
-    ? `Ok: ${actual}/${expected} numeros`
-    : `Faltam ${missing}: ${actual}/${expected} numeros`;
+    ? `Ok: ${actual} unicos / ${expected} max.`
+    : `Possiveis faltas: ${missing} (${actual}/${expected})`;
 }
 
 function allNumbers() {
@@ -142,8 +143,7 @@ function makeAddSubProblem(target, maxFirst, maxTerm) {
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
+}\n
 function makeEasyProblem(target) {
   if (target <= 2) return `${target + 1} - 1`;
 
@@ -293,25 +293,38 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
   setOcrStatus("A ler numeros da foto...", "busy");
 
   try {
-    const images = await prepareImagesForOcr(photoDataUrl);
+    const cards = await prepareCardImagesForOcr(photoDataUrl);
     const reads = [];
+    const cardNumbers = [];
 
-    for (let index = 0; index < images.length; index += 1) {
-      const result = await window.Tesseract.recognize(images[index], "eng", {
-        tessedit_char_whitelist: "0123456789",
-        tessedit_pageseg_mode: "6",
-        logger: (progress) => {
-          if (progress.status === "recognizing text") {
-            const percent = Math.round((progress.progress || 0) * 100);
-            setOcrStatus(`A ler numeros... ${index + 1}/${images.length}, ${percent}%`, "busy");
-          }
-        },
-      });
+    state.detectedCardCount = Math.max(state.detectedCardCount, cards.length);
+    els.expectedCards.value = String(state.detectedCardCount);
 
-      reads.push(result.data.text);
+    for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
+      const candidates = new Map();
+
+      for (let index = 0; index < cards[cardIndex].images.length; index += 1) {
+        const result = await window.Tesseract.recognize(cards[cardIndex].images[index], "eng", {
+          tessedit_char_whitelist: "0123456789",
+          tessedit_pageseg_mode: "6",
+          logger: (progress) => {
+            if (progress.status === "recognizing text") {
+              const percent = Math.round((progress.progress || 0) * 100);
+              setOcrStatus(`Cartao ${cardIndex + 1}/${cards.length}: leitura ${index + 1}/${cards[cardIndex].images.length}, ${percent}%`, "busy");
+            }
+          },
+        });
+
+        reads.push(result.data.text);
+        collectOcrCandidates(candidates, result);
+      }
+
+      cardNumbers.push(selectCardNumbers(candidates));
     }
 
-    const numbers = parseNumbers(reads.join(" "));
+    const numbers = cardNumbers.flat().length > 0
+      ? cardNumbers.flat()
+      : parseNumbers(reads.join(" "));
     state.detectedNumbers = mergeNumbers(state.detectedNumbers, numbers);
     renderDetectedNumbers();
 
@@ -324,15 +337,49 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
     const detected = state.detectedNumbers.length;
     const tone = detected >= expected ? "good" : "warn";
     const message = detected >= expected
-      ? `Detetei ${detected}/${expected} numeros. Toca num numero se quiseres ignora-lo.`
-      : `Detetei ${detected}/${expected} numeros. Toca na foto para acrescentar os que faltam.`;
+      ? `Detetei ${detected} numeros unicos em ${state.detectedCardCount} cartao(s).`
+      : `Detetei ${detected} numeros unicos em ${state.detectedCardCount} cartao(s). Toca na foto para acrescentar os que faltam.`;
     setOcrStatus(message, tone);
   } catch (error) {
     setOcrStatus("Nao consegui ler esta foto. Tenta aproximar mais o cartao.", "warn");
   }
 }
 
-function prepareImagesForOcr(photoDataUrl) {
+function collectOcrCandidates(candidates, result) {
+  const words = Array.isArray(result.data.words) ? result.data.words : [];
+  const source = words.length > 0
+    ? words.map((word) => ({ text: word.text, confidence: word.confidence || 0 }))
+    : (result.data.text.match(/\d+/g) || []).map((text) => ({ text, confidence: 50 }));
+
+  source.forEach((item) => {
+    parseNumbers(item.text).forEach((number) => {
+      const previous = candidates.get(number) || { number, count: 0, confidence: 0 };
+      previous.count += 1;
+      previous.confidence += item.confidence;
+      candidates.set(number, previous);
+    });
+  });
+}
+
+function selectCardNumbers(candidates) {
+  const scored = [...candidates.values()]
+    .map((item) => ({
+      number: item.number,
+      count: item.count,
+      score: item.count * 100 + item.confidence,
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const reliable = scored.filter((item) => item.count >= 2);
+  const source = reliable.length >= 10 ? reliable : scored;
+
+  return source
+    .slice(0, 15)
+    .map((item) => item.number)
+    .sort((a, b) => a - b);
+}
+
+function prepareCardImagesForOcr(photoDataUrl) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.addEventListener("load", () => {
@@ -345,23 +392,61 @@ function prepareImagesForOcr(photoDataUrl) {
       const context = canvas.getContext("2d", { willReadFrequently: true });
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const original = context.getImageData(0, 0, canvas.width, canvas.height);
-      const regions = [
-        original,
-        cropImageData(original, canvas.width, canvas.height, 0, 0, canvas.width, Math.round(canvas.height * 0.55)),
-        cropImageData(original, canvas.width, canvas.height, 0, Math.round(canvas.height * 0.38), canvas.width, Math.round(canvas.height * 0.62)),
-        cropImageData(original, canvas.width, canvas.height, 0, Math.round(canvas.height * 0.25), canvas.width, Math.round(canvas.height * 0.5)),
-        cropImageData(original, canvas.width, canvas.height, 0, Math.round(canvas.height * 0.5), canvas.width, Math.round(canvas.height * 0.5)),
-      ];
+      const bands = detectCardBands(original, canvas.width, canvas.height);
+      const regions = bands.length > 0
+        ? bands.map((band) => cropImageData(original, canvas.width, canvas.height, 0, band.y, canvas.width, band.height))
+        : [original];
 
-      resolve(regions.flatMap((region) => [
-        makeOcrVariant(region.data, region.width, region.height, "contrast"),
-        makeOcrVariant(region.data, region.width, region.height, "red-green"),
-        makeOcrVariant(region.data, region.width, region.height, "dark-text"),
-      ]));
+      resolve(regions.map((region) => ({
+        images: [
+          makeOcrVariant(region.data, region.width, region.height, "contrast"),
+          makeOcrVariant(region.data, region.width, region.height, "red-green"),
+          makeOcrVariant(region.data, region.width, region.height, "dark-text"),
+        ],
+      })));
     });
     image.addEventListener("error", reject);
     image.src = photoDataUrl;
   });
+}
+
+function detectCardBands(source, width, height) {
+  const minBandHeight = Math.round(height * 0.08);
+  const rows = [];
+
+  for (let y = 0; y < height; y += 1) {
+    let white = 0;
+    for (let x = 0; x < width; x += 4) {
+      const index = (y * width + x) * 4;
+      const red = source.data[index];
+      const green = source.data[index + 1];
+      const blue = source.data[index + 2];
+      if (red > 185 && green > 185 && blue > 185) white += 1;
+    }
+    rows.push(white / Math.ceil(width / 4));
+  }
+
+  const threshold = 0.18;
+  const bands = [];
+  let start = -1;
+  for (let y = 0; y < rows.length; y += 1) {
+    if (rows[y] > threshold && start === -1) start = y;
+    if ((rows[y] <= threshold || y === rows.length - 1) && start !== -1) {
+      const end = y;
+      if (end - start >= minBandHeight) {
+        const pad = Math.round((end - start) * 0.08);
+        bands.push({
+          y: Math.max(0, start - pad),
+          height: Math.min(height - Math.max(0, start - pad), end - start + pad * 2),
+        });
+      }
+      start = -1;
+    }
+  }
+
+  return bands
+    .filter((band) => band.height > minBandHeight)
+    .slice(0, 20);
 }
 
 function cropImageData(source, sourceWidth, sourceHeight, x, y, width, height) {
@@ -470,6 +555,7 @@ function addCard(event) {
   state.pendingPhoto = "";
   state.pendingPhotos = [];
   state.detectedNumbers = [];
+  state.detectedCardCount = 1;
   state.removedDetectedNumbers = [];
   els.cardForm.reset();
   els.photoPreview.innerHTML = "";
@@ -488,6 +574,7 @@ async function handlePhotos(event) {
   state.pendingPhoto = "";
   state.pendingPhotos = [];
   state.detectedNumbers = [];
+  state.detectedCardCount = 1;
   state.removedDetectedNumbers = [];
   renderDetectedNumbers();
   els.photoPreview.innerHTML = "";
@@ -497,6 +584,10 @@ async function handlePhotos(event) {
       ? files[0].name.replace(/\.[^.]+$/, "")
       : `Cartoes ${state.cards.length + 1}`;
   }
+
+  state.detectedCardCount = files.length;
+  els.expectedCards.value = String(files.length);
+  updateExpectedStatus();
 
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
