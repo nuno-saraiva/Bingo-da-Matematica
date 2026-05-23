@@ -297,17 +297,18 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
 
   try {
     const cards = await prepareCardImagesForOcr(photoDataUrl);
-    const reads = [];
     const cardNumbers = [];
 
     state.detectedCardCount = Math.max(state.detectedCardCount, cards.length);
     els.expectedCards.value = String(state.detectedCardCount);
 
     for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
-      const candidates = new Map();
+      const cellCandidates = new Map();
+      const looseCandidates = new Map();
 
       for (let index = 0; index < cards[cardIndex].images.length; index += 1) {
-        const result = await window.Tesseract.recognize(cards[cardIndex].images[index], "eng", {
+        const variant = cards[cardIndex].images[index];
+        const result = await window.Tesseract.recognize(variant.src, "eng", {
           tessedit_char_whitelist: "0123456789",
           tessedit_pageseg_mode: "6",
           logger: (progress) => {
@@ -318,21 +319,20 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
           },
         });
 
-        reads.push(result.data.text);
-        collectOcrCandidates(candidates, result);
+        collectGridOcrCandidates(cellCandidates, looseCandidates, result, variant);
       }
 
-      cardNumbers.push(selectCardNumbers(candidates));
+      cardNumbers.push(selectCardNumbers(cellCandidates, looseCandidates));
     }
 
     const numbers = cardNumbers.flat().length > 0
       ? cardNumbers.flat()
-      : parseNumbers(reads.join(" "));
+      : [];
     state.detectedNumbers = mergeNumbers(state.detectedNumbers, numbers);
     renderDetectedNumbers();
 
     if (state.detectedNumbers.length === 0) {
-      setOcrStatus("Nao encontrei numeros de 1 a 90. Tenta uma foto mais perto, direita e com boa luz.", "warn");
+      setOcrStatus("Nao encontrei numeros validos na grelha. Tenta uma foto mais direita e perto dos cartoes.", "warn");
       return;
     }
 
@@ -340,59 +340,140 @@ async function recognizeNumbersFromPhoto(photoDataUrl) {
     const detected = state.detectedNumbers.length;
     const tone = detected >= expected ? "good" : "warn";
     const message = detected >= expected
-      ? `Detetei ${detected} numeros unicos em ${state.detectedCardCount} cartao(s).`
-      : `Detetei ${detected} numeros unicos em ${state.detectedCardCount} cartao(s). Toca na foto para acrescentar os que faltam.`;
+      ? `Detetei ${detected} numeros validos pela grelha em ${state.detectedCardCount} cartao(s).`
+      : `Detetei ${detected} numeros validos pela grelha em ${state.detectedCardCount} cartao(s). Toca na foto para acrescentar os que faltam.`;
     setOcrStatus(message, tone);
   } catch (error) {
     setOcrStatus("Nao consegui ler esta foto. Tenta aproximar mais o cartao.", "warn");
   }
 }
 
-function collectOcrCandidates(candidates, result) {
+function collectGridOcrCandidates(cellCandidates, looseCandidates, result, variant) {
   const words = Array.isArray(result.data.words) ? result.data.words : [];
-  const source = words.length > 0
-    ? words.map((word) => ({ text: word.text, confidence: word.confidence || 0 }))
-    : (result.data.text.match(/\d+/g) || []).map((text) => ({ text, confidence: 50 }));
 
-  source.forEach((item) => {
-    parseNumbers(item.text).forEach((number) => {
-      const previous = candidates.get(number) || { number, count: 0, confidence: 0 };
-      previous.count += 1;
-      previous.confidence += item.confidence;
-      candidates.set(number, previous);
+  words.forEach((word) => {
+    const bbox = word.bbox || word.symbols?.[0]?.bbox;
+    const numbers = parseNumbers(word.text);
+    if (numbers.length === 0) return;
+
+    numbers.forEach((number) => {
+      addLooseCandidate(looseCandidates, number, word.confidence || 0);
     });
+
+    if (!bbox) return;
+    const cell = gridCellFromBox(bbox, variant.width, variant.height);
+    if (!cell) return;
+
+    numbers
+      .filter((number) => numberFitsColumn(number, cell.col))
+      .forEach((number) => addCellCandidate(cellCandidates, cell, number, word.confidence || 0, bbox));
   });
+
+  if (words.length === 0) {
+    parseNumbers(result.data.text || "").forEach((number) => {
+      addLooseCandidate(looseCandidates, number, 35);
+    });
+  }
 }
 
-function selectCardNumbers(candidates) {
-  const scored = [...candidates.values()]
+function addLooseCandidate(candidates, number, confidence) {
+  const previous = candidates.get(number) || { number, count: 0, confidence: 0 };
+  previous.count += 1;
+  previous.confidence += confidence;
+  candidates.set(number, previous);
+}
+
+function addCellCandidate(cellCandidates, cell, number, confidence, bbox) {
+  const key = `${cell.row}-${cell.col}`;
+  const candidates = cellCandidates.get(key) || new Map();
+  const previous = candidates.get(number) || {
+    number,
+    row: cell.row,
+    col: cell.col,
+    count: 0,
+    confidence: 0,
+    sizeScore: 0,
+  };
+  const boxHeight = Math.max(1, bbox.y1 - bbox.y0);
+  const cellHeight = Math.max(1, cell.height);
+  const relativeCenterY = ((bbox.y0 + bbox.y1) / 2 - cell.top) / cellHeight;
+  const mainNumberBonus = boxHeight > cellHeight * 0.28 && relativeCenterY < 0.72 ? 35 : 0;
+  previous.count += 1;
+  previous.confidence += confidence;
+  previous.sizeScore += mainNumberBonus;
+  candidates.set(number, previous);
+  cellCandidates.set(key, candidates);
+}
+
+function selectCardNumbers(cellCandidates, looseCandidates) {
+  const byCell = [...cellCandidates.values()]
+    .map((candidates) => [...candidates.values()]
+      .map((item) => ({
+        ...item,
+        score: item.count * 120 + item.confidence + item.sizeScore,
+      }))
+      .sort((a, b) => b.score - a.score)[0])
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score);
+
+  if (byCell.length >= 8) {
+    return byCell
+      .slice(0, 15)
+      .map((item) => item.number)
+      .sort((a, b) => a - b);
+  }
+
+  const fallback = [...looseCandidates.values()]
     .map((item) => ({
       number: item.number,
       count: item.count,
-      confidence: item.confidence,
       score: item.count * 100 + item.confidence,
     }))
+    .filter((item) => item.count >= 2 || item.number >= 10)
     .sort((a, b) => b.score - a.score);
 
-  const strongTwoDigitNumbers = scored
-    .filter((item) => item.number >= 10 && item.count >= 2)
-    .map((item) => String(item.number));
-  const appearsInsideStrongNumber = (number) => strongTwoDigitNumbers
-    .some((candidate) => candidate.includes(String(number)));
-
-  const filtered = scored.filter((item) => {
-    if (item.number >= 10) return true;
-    if (item.count >= 3) return true;
-    return !appearsInsideStrongNumber(item.number);
-  });
-
-  const reliable = filtered.filter((item) => item.count >= 2);
-  const source = reliable.length >= 10 ? reliable : filtered;
-
-  return source
+  return fallback
     .slice(0, 15)
     .map((item) => item.number)
     .sort((a, b) => a - b);
+}
+
+function gridCellFromBox(bbox, width, height) {
+  const bounds = gridBounds(width, height);
+  const centerX = (bbox.x0 + bbox.x1) / 2;
+  const centerY = (bbox.y0 + bbox.y1) / 2;
+  if (centerX < bounds.left || centerX > bounds.right || centerY < bounds.top || centerY > bounds.bottom) {
+    return null;
+  }
+
+  const cellWidth = (bounds.right - bounds.left) / 9;
+  const cellHeight = (bounds.bottom - bounds.top) / 3;
+  const col = Math.floor((centerX - bounds.left) / cellWidth);
+  const row = Math.floor((centerY - bounds.top) / cellHeight);
+  if (col < 0 || col > 8 || row < 0 || row > 2) return null;
+
+  return {
+    row,
+    col,
+    top: bounds.top + row * cellHeight,
+    height: cellHeight,
+  };
+}
+
+function gridBounds(width, height) {
+  return {
+    left: width * 0.075,
+    right: width * 0.93,
+    top: height * 0.17,
+    bottom: height * 0.82,
+  };
+}
+
+function numberFitsColumn(number, col) {
+  if (col === 0) return number >= 1 && number <= 9;
+  const min = col * 10;
+  const max = col === 8 ? 90 : col * 10 + 9;
+  return number >= min && number <= max;
 }
 
 function prepareCardImagesForOcr(photoDataUrl) {
@@ -524,7 +605,12 @@ function makeOcrVariant(source, width, height, mode) {
   sourceCanvas.getContext("2d").putImageData(imageData, 0, 0);
   context.imageSmoothingEnabled = false;
   context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/png");
+  return {
+    src: canvas.toDataURL("image/png"),
+    width: canvas.width,
+    height: canvas.height,
+    mode,
+  };
 }
 
 function renderQuestion() {
