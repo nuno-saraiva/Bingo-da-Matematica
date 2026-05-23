@@ -15,6 +15,7 @@ localStorage.removeItem("math-bingo-state-v2");
 localStorage.removeItem("math-bingo-state-v3");
 
 const els = {
+  cameraPhotos: document.querySelector("#cameraPhotos"),
   cardPhotos: document.querySelector("#cardPhotos"),
   photoPreview: document.querySelector("#photoPreview"),
   cardForm: document.querySelector("#cardForm"),
@@ -87,11 +88,12 @@ function updateExpectedStatus() {
   const expected = expectedNumberCount();
   const actual = activeDetectedNumbers().length;
   const missing = Math.max(0, expected - actual);
+  const cards = Math.max(1, Number.parseInt(els.expectedCards.value, 10) || state.detectedCardCount || 1);
 
   els.expectedStatus.className = `expected-status ${missing === 0 ? "good" : "warn"}`;
   els.expectedStatus.textContent = missing === 0
-    ? `Ok: ${actual} unicos / ${expected} max.`
-    : `Possiveis faltas: ${missing} (${actual}/${expected})`;
+    ? `${cards} cartao(s), ${actual} numeros unicos`
+    : `${cards} cartao(s), ${actual}/${expected} numeros unicos`;
 }
 
 function allNumbers() {
@@ -425,7 +427,7 @@ function prepareCardImagesForOcr(photoDataUrl) {
 }
 
 function detectCardBands(source, width, height) {
-  const minBandHeight = Math.round(height * 0.08);
+  const minBandHeight = Math.round(height * 0.11);
   const rows = [];
 
   for (let y = 0; y < height; y += 1) {
@@ -458,9 +460,23 @@ function detectCardBands(source, width, height) {
     }
   }
 
-  return bands
-    .filter((band) => band.height > minBandHeight)
-    .slice(0, 20);
+  const merged = [];
+  const mergeGap = Math.round(height * 0.025);
+  bands.forEach((band) => {
+    const previous = merged[merged.length - 1];
+    if (previous && band.y - (previous.y + previous.height) <= mergeGap) {
+      const end = Math.max(previous.y + previous.height, band.y + band.height);
+      previous.height = end - previous.y;
+    } else {
+      merged.push({ ...band });
+    }
+  });
+
+  return merged
+    .filter((band) => band.height >= minBandHeight && band.height <= height * 0.45)
+    .sort((a, b) => b.height - a.height)
+    .slice(0, 20)
+    .sort((a, b) => a.y - b.y);
 }
 
 function cropImageData(source, sourceWidth, sourceHeight, x, y, width, height) {
@@ -551,14 +567,6 @@ function addCard(event) {
     return;
   }
 
-  const expected = expectedNumberCount();
-  if (numbers.length < expected) {
-    const confirmed = window.confirm(
-      `Foram detetados ${numbers.length} de ${expected} numeros esperados. Guardar mesmo assim?`
-    );
-    if (!confirmed) return;
-  }
-
   state.cards.push({
     id: crypto.randomUUID(),
     name: els.cardName.value.trim() || `Cartoes ${state.cards.length + 1}`,
@@ -572,6 +580,7 @@ function addCard(event) {
   state.detectedCardCount = 1;
   state.removedDetectedNumbers = [];
   els.cardForm.reset();
+  resetPhotoInputs();
   els.photoPreview.innerHTML = "";
   setOcrStatus("Escolhe uma foto para eu ler os numeros.");
   els.expectedCards.value = "1";
@@ -623,6 +632,13 @@ async function handlePhotos(event) {
     setOcrStatus(`A ler foto ${index + 1}/${files.length}...`, "busy");
     await recognizeNumbersFromPhoto(photo);
   }
+
+  event.target.value = "";
+}
+
+function resetPhotoInputs() {
+  els.cardPhotos.value = "";
+  els.cameraPhotos.value = "";
 }
 
 function readFileAsDataUrl(file) {
@@ -695,6 +711,7 @@ function resetAll() {
   state.removedDetectedNumbers = [];
   localStorage.removeItem(storageKey);
   els.cardForm.reset();
+  resetPhotoInputs();
   els.photoPreview.innerHTML = "";
   setOcrStatus("Escolhe uma foto para eu ler os numeros.");
   renderDetectedNumbers();
@@ -704,6 +721,7 @@ function resetAll() {
 }
 
 els.cardPhotos.addEventListener("change", handlePhotos);
+els.cameraPhotos.addEventListener("change", handlePhotos);
 els.cardForm.addEventListener("submit", addCard);
 els.startGame.addEventListener("click", startGame);
 els.playRound.addEventListener("click", playRound);
