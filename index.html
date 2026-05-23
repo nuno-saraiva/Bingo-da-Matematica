@@ -25,12 +25,21 @@
           <span id="cardCount" class="counter">0 cartoes</span>
         </div>
 
-        <label class="upload-zone" for="cardPhotos">
-          <input id="cardPhotos" type="file" accept="image/*" multiple />
+        <div class="upload-zone">
           <span class="upload-icon">+</span>
-          <strong>Escolher fotos dos cartoes</strong>
-          <small>Podes fotografar varios cartoes juntos.</small>
-        </label>
+          <strong>Adicionar fotos dos cartoes</strong>
+          <small>Podes usar a camara ou escolher fotos da galeria.</small>
+          <div class="upload-actions">
+            <label class="upload-button" for="cameraPhotos">
+              <input id="cameraPhotos" type="file" accept="image/*" capture="environment" onchange="handlePhotos(event)" />
+              Usar camara
+            </label>
+            <label class="upload-button" for="cardPhotos">
+              <input id="cardPhotos" type="file" accept="image/*" multiple />
+              Escolher fotos
+            </label>
+          </div>
+        </div>
 
         <form id="cardForm" class="card-form">
           <label>
@@ -115,6 +124,6 @@
     </template>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=ocr-9"></script>
+    <script src="app.js?v=ocr-10"></script>
   </body>
 </html>
