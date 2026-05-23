@@ -417,7 +417,7 @@ function selectCardNumbers(cellCandidates, looseCandidates) {
     .filter(Boolean)
     .sort((a, b) => b.score - a.score);
 
-  if (byCell.length >= 8) {
+  if (byCell.length > 0) {
     return byCell
       .slice(0, 15)
       .map((item) => item.number)
@@ -430,7 +430,7 @@ function selectCardNumbers(cellCandidates, looseCandidates) {
       count: item.count,
       score: item.count * 100 + item.confidence,
     }))
-    .filter((item) => item.count >= 2 || item.number >= 10)
+    .filter((item) => item.number >= 10 && item.count >= 2)
     .sort((a, b) => b.score - a.score);
 
   return fallback
@@ -555,7 +555,11 @@ function detectCardBands(source, width, height) {
   });
 
   return merged
-    .filter((band) => band.height >= minBandHeight && band.height <= height * 0.32)
+    .filter((band) => (
+      band.height >= minBandHeight
+      && band.height <= height * 0.32
+      && band.height >= width * 0.35
+    ))
     .sort((a, b) => b.height - a.height)
     .slice(0, 20)
     .sort((a, b) => a.y - b.y);
