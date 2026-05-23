@@ -91,27 +91,39 @@ function makeProblem(target) {
   const level = els.levelSelect.value;
 
   if (level === "easy" && target <= 20) {
-    return makeEasyProblem(target);
+    return makeAddSubProblem(target, 20, 5);
   }
 
-  return makeNinetyProblem(target);
+  return makeAddSubProblem(target, 90, 10);
 }
 
-function makeNinetyProblem(target) {
-  const options = [];
-  const tens = Math.max(10, Math.floor(target / 10) * 10);
-  const ones = target - tens;
+function makeAddSubProblem(target, maxFirst, maxTerm) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const termCount = randomInt(2, 5);
+    const rest = [];
+    let restTotal = 0;
 
-  if (ones > 0) options.push(`${tens} + ${ones}`);
-  if (target > 10) options.push(`${target - 10} + 10`);
-  if (target <= 80) options.push(`${target + 10} - 10`);
-  if (target > 5) options.push(`${target - 5} + 5`);
-  if (target <= 85) options.push(`${target + 5} - 5`);
-  if (target > 2) options.push(`${target - 2} + 2`);
+    for (let index = 1; index < termCount; index += 1) {
+      const sign = Math.random() > 0.45 ? 1 : -1;
+      const value = randomInt(1, maxTerm);
+      rest.push({ sign, value });
+      restTotal += sign * value;
+    }
 
-  if (options.length === 0) return makeEasyProblem(target);
+    const first = target - restTotal;
+    if (first >= 1 && first <= maxFirst) {
+      return [
+        `${first}`,
+        ...rest.map((term) => `${term.sign > 0 ? "+" : "-"} ${term.value}`),
+      ].join(" ");
+    }
+  }
 
-  return options[Math.floor(Math.random() * options.length)];
+  return `${target}`;
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 function makeEasyProblem(target) {
@@ -223,6 +235,34 @@ function toggleDetectedNumber(number) {
     state.removedDetectedNumbers.push(number);
   }
   renderDetectedNumbers();
+}
+
+function addNumberFromPhoto() {
+  const value = window.prompt("Que numero queres confirmar nesta foto?");
+  if (!value) return;
+
+  const numbers = parseNumbers(value);
+  if (numbers.length === 0) {
+    setOcrStatus("Esse numero nao e valido. Usa numeros entre 1 e 90.", "warn");
+    return;
+  }
+
+  state.detectedNumbers = mergeNumbers(state.detectedNumbers, numbers);
+  state.removedDetectedNumbers = state.removedDetectedNumbers
+    .filter((number) => !numbers.includes(number));
+  renderDetectedNumbers();
+  setOcrStatus(`Numero ${numbers.join(", ")} confirmado pela foto.`, "good");
+}
+
+function bindPhotoClick(item) {
+  const image = item.querySelector("img");
+  image.addEventListener("click", addNumberFromPhoto);
+  image.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      addNumberFromPhoto();
+    }
+  });
 }
 
 async function recognizeNumbersFromPhoto(photoDataUrl) {
@@ -433,13 +473,14 @@ async function handlePhotos(event) {
     const item = document.createElement("div");
     item.className = "photo-item";
     item.innerHTML = `
-      <img src="${photo}" alt="Foto do cartao selecionado" />
+      <img src="${photo}" alt="Foto do cartao selecionado" tabindex="0" />
       <div>
         <strong>${file.name}</strong>
-        <small>A procurar numeros de 1 a 90 nesta foto.</small>
+        <small>A procurar numeros de 1 a 90. Toca na foto para confirmar outro numero.</small>
       </div>
     `;
     els.photoPreview.append(item);
+    bindPhotoClick(item);
 
     setOcrStatus(`A ler foto ${index + 1}/${files.length}...`, "busy");
     await recognizeNumbersFromPhoto(photo);
