@@ -251,7 +251,21 @@ function buildOperation(target) {
     if (Number.isInteger(other) && other >= 1 && other <= 10) {
       const problem = `${factor} x ${other}`;
       addCandidate(candidates, problem, target);
-      if (factor > 1 && other > 1) {
+      addCandidate(multiplicationCandidates, problem, target);
+    }
+  }
+
+  for (let factor = 2; factor <= 10; factor += 1) {
+    for (let other = 2; other <= 10; other += 1) {
+      const product = factor * other;
+      const difference = Math.abs(target - product);
+
+      if (difference > 0 && difference <= 10) {
+        const problem =
+          product < target
+            ? `${factor} x ${other} + ${difference}`
+            : `${factor} x ${other} - ${difference}`;
+        addCandidate(candidates, problem, target);
         addCandidate(multiplicationCandidates, problem, target);
       }
     }
@@ -309,7 +323,7 @@ function buildOperation(target) {
     addCandidate(candidates, `${target - 1} + 1`, target);
   }
 
-  if (multiplicationCandidates.length && Math.random() < 0.35) {
+  if (multiplicationCandidates.length && Math.random() < 0.6) {
     return randomItem(multiplicationCandidates);
   }
 
