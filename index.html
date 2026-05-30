@@ -5,61 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bingo da Matematica</title>
     <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="confirm-cards.css?v=1" />
   </head>
   <body>
     <header class="app-header">
       <div>
         <p class="eyebrow">Bingo da matematica</p>
-        <h1>Joga com contas simples e os numeros dos cartoes.</h1>
+        <h1>Operacoes simples com os numeros dos teus cartoes.</h1>
       </div>
-      <button id="resetAll" class="ghost-button" type="button" title="Limpar jogo">Limpar</button>
+      <div class="header-actions">
+        <button id="chooseCardsTop" class="ghost-button" type="button">Escolher cartoes</button>
+        <button id="newGameTop" class="ghost-button" type="button">Novo jogo</button>
+      </div>
     </header>
 
     <main class="app-shell">
       <section class="setup-panel" aria-labelledby="setup-title">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">1. Cartoes</p>
-            <h2 id="setup-title">Adicionar fotos</h2>
+            <p class="eyebrow">1. Escolher cartoes</p>
+            <h2 id="setup-title">Selecionar numeros</h2>
           </div>
-          <span id="cardCount" class="counter">0 cartoes</span>
+          <span id="setupStatus" class="counter">0/15</span>
         </div>
 
-        <div class="upload-zone">
-          <span class="upload-icon">+</span>
-          <strong>Adicionar fotos dos cartoes</strong>
-          <small>Podes usar a camara ou escolher fotos da galeria.</small>
-          <div class="upload-actions">
-            <label class="upload-button" for="cameraPhotos">
-              <input id="cameraPhotos" type="file" accept="image/*" capture="environment" />
-              Usar camara
-            </label>
-            <label class="upload-button" for="cardPhotos">
-              <input id="cardPhotos" type="file" accept="image/*" multiple />
-              Escolher fotos
-            </label>
-          </div>
+        <div class="card-count-panel">
+          <span>Quantos cartoes?</span>
+          <div id="cardCountPicker" class="segmented-control" aria-label="Quantidade de cartoes"></div>
         </div>
 
-        <form id="cardForm" class="card-form">
-          <label>
-            Nome do cartao
-            <input id="cardName" type="text" placeholder="Ex.: Cartao da Matilde" />
-          </label>
-          <div class="ocr-box">
-            <div id="ocrStatus" class="ocr-status">Escolhe uma foto para eu ler os numeros.</div>
-            <input id="expectedCards" type="hidden" value="1" />
-            <div class="auto-detect-row">
-              <span>Cartoes detetados automaticamente</span>
-              <strong id="expectedStatus" class="expected-status">A aguardar foto</strong>
-            </div>
-            <div id="detectedNumbers" class="detected-numbers" aria-live="polite"></div>
-          </div>
-          <button id="saveCard" class="primary-button" type="submit" disabled>Guardar cartoes detetados</button>
-        </form>
+        <div id="setupCards" class="setup-cards"></div>
 
-        <div id="photoPreview" class="photo-preview" aria-live="polite"></div>
+        <button id="startGame" class="primary-button wide-button" type="button" disabled>Iniciar jogo</button>
       </section>
 
       <section class="game-panel" aria-labelledby="game-title">
@@ -71,59 +47,43 @@
           <span id="remainingCount" class="counter">0 numeros</span>
         </div>
 
+        <div id="winnerBanner" class="winner-banner" hidden></div>
+
         <div class="game-board">
-          <div id="statusText" class="status-text">Adiciona pelo menos um cartao para comecar.</div>
+          <div id="statusText" class="status-text">Escolhe os numeros dos cartoes para comecar.</div>
           <div id="question" class="question" aria-live="assertive">?</div>
           <div id="answer" class="answer" hidden></div>
           <div class="game-actions">
-            <button id="startGame" class="secondary-button" type="button">Iniciar jogada</button>
-            <button id="playRound" class="primary-button" type="button" disabled>Jogar</button>
-            <button id="revealAnswer" class="ghost-button" type="button" disabled>Ver solucao</button>
+            <button id="chooseCards" class="ghost-button" type="button">Escolher cartoes</button>
+            <button id="newOperation" class="primary-button" type="button" disabled>Nova operacao</button>
+            <button id="showAnswer" class="secondary-button" type="button" disabled>Mostrar resultado</button>
+            <button id="newGame" class="ghost-button" type="button">Novo jogo</button>
           </div>
-        </div>
-
-        <div class="settings-row">
-          <label>
-            Nivel
-            <select id="levelSelect">
-              <option value="tens">6 anos: ate 90</option>
-              <option value="easy">Muito facil: ate 20</option>
-            </select>
-          </label>
-          <label class="check-label">
-            <input id="avoidRepeats" type="checkbox" checked />
-            Sem repetir resultados
-          </label>
         </div>
       </section>
     </main>
 
-    <section class="cards-area" aria-labelledby="cards-title">
+    <section class="cards-area" aria-labelledby="play-cards-title">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">3. Marcar</p>
-          <h2 id="cards-title">Cartoes em jogo</h2>
+          <p class="eyebrow">3. Cartoes</p>
+          <h2 id="play-cards-title">Cartoes em jogo</h2>
         </div>
       </div>
-      <div id="cardsGrid" class="cards-grid"></div>
+      <div id="playCards" class="play-cards"></div>
     </section>
 
-    <template id="cardTemplate">
-      <article class="bingo-card">
-        <div class="bingo-card-head">
-          <img alt="" />
-          <div>
-            <h3></h3>
-            <p></p>
-          </div>
-          <button type="button" class="remove-card" title="Remover cartao">x</button>
+    <section class="history-area" aria-labelledby="history-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">4. Numeros</p>
+          <h2 id="history-title">Numeros que sairam</h2>
         </div>
-        <div class="number-grid"></div>
-      </article>
-    </template>
+      </div>
+      <div id="calledNumbers" class="called-numbers"></div>
+      <div id="historyList" class="history-list"></div>
+    </section>
 
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=ocr-14"></script>
-    <script src="confirm-cards.js?v=1"></script>
+    <script src="app.js?v=manual-1"></script>
   </body>
 </html>
