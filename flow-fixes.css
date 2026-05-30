@@ -1,0 +1,29 @@
+.settings-row {
+  display: none;
+}
+
+.results-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.result-chip {
+  display: inline-grid;
+  place-items: center;
+  min-width: 3.1rem;
+  min-height: 3.1rem;
+  border: 1px solid #63b88f;
+  border-radius: 8px;
+  background: var(--mint);
+  color: #116149;
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.result-chip.current {
+  border-color: var(--sun);
+  background: #fff4c7;
+  color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(249, 199, 79, 0.22);
+}
