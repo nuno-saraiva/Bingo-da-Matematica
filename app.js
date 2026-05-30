@@ -1,828 +1,606 @@
+const MAX_CARDS = 4;
+const NUMBERS_PER_CARD = 15;
+const STORAGE_KEY = "bingo-da-matematica-manual-v1";
+
+const allNumbers = Array.from({ length: 90 }, (_, index) => index + 1);
+
 const state = {
-  cards: [],
+  activeCardCount: 1,
+  cards: Array.from({ length: MAX_CARDS }, (_, index) => ({
+    name: `Cartao ${index + 1}`,
+    numbers: [],
+  })),
   called: [],
+  history: [],
   current: null,
-  pendingPhoto: "",
-  pendingPhotos: [],
-  detectedNumbers: [],
-  detectedCardCount: 1,
-  removedDetectedNumbers: [],
+  gameStarted: false,
+  gameOver: false,
+  winners: [],
+  setupMessage: "",
 };
 
-const storageKey = "math-bingo-state-v4";
-localStorage.removeItem("math-bingo-state-v1");
-localStorage.removeItem("math-bingo-state-v2");
-localStorage.removeItem("math-bingo-state-v3");
-
 const els = {
-  cameraPhotos: document.querySelector("#cameraPhotos"),
-  cardPhotos: document.querySelector("#cardPhotos"),
-  photoPreview: document.querySelector("#photoPreview"),
-  cardForm: document.querySelector("#cardForm"),
-  cardName: document.querySelector("#cardName"),
-  expectedCards: document.querySelector("#expectedCards"),
-  expectedStatus: document.querySelector("#expectedStatus"),
-  detectedNumbers: document.querySelector("#detectedNumbers"),
-  ocrStatus: document.querySelector("#ocrStatus"),
-  saveCard: document.querySelector("#saveCard"),
-  cardsGrid: document.querySelector("#cardsGrid"),
-  cardCount: document.querySelector("#cardCount"),
+  newGameTop: document.querySelector("#newGameTop"),
+  cardCountPicker: document.querySelector("#cardCountPicker"),
+  setupCards: document.querySelector("#setupCards"),
+  setupStatus: document.querySelector("#setupStatus"),
+  startGame: document.querySelector("#startGame"),
   remainingCount: document.querySelector("#remainingCount"),
+  winnerBanner: document.querySelector("#winnerBanner"),
   statusText: document.querySelector("#statusText"),
   question: document.querySelector("#question"),
   answer: document.querySelector("#answer"),
-  startGame: document.querySelector("#startGame"),
-  playRound: document.querySelector("#playRound"),
-  revealAnswer: document.querySelector("#revealAnswer"),
-  resetAll: document.querySelector("#resetAll"),
-  levelSelect: document.querySelector("#levelSelect"),
-  avoidRepeats: document.querySelector("#avoidRepeats"),
-  template: document.querySelector("#cardTemplate"),
+  newOperation: document.querySelector("#newOperation"),
+  showAnswer: document.querySelector("#showAnswer"),
+  newGame: document.querySelector("#newGame"),
+  playCards: document.querySelector("#playCards"),
+  calledNumbers: document.querySelector("#calledNumbers"),
+  historyList: document.querySelector("#historyList"),
+  chooseCards: document.querySelector("#chooseCards"),
+  chooseCardsTop: document.querySelector("#chooseCardsTop"),
 };
 
-function loadState() {
-  const saved = localStorage.getItem(storageKey);
-  if (!saved) return;
-
-  try {
-    const parsed = JSON.parse(saved);
-    state.cards = Array.isArray(parsed.cards) ? parsed.cards : [];
-    state.called = Array.isArray(parsed.called) ? parsed.called : [];
-    state.current = parsed.current || null;
-  } catch {
-    localStorage.removeItem(storageKey);
-  }
+function clampCardCount(value) {
+  return Math.min(MAX_CARDS, Math.max(1, Number(value) || 1));
 }
 
-function saveState() {
-  localStorage.setItem(storageKey, JSON.stringify({
-    cards: state.cards,
-    called: state.called,
-    current: state.current,
-  }));
-}
-
-function parseNumbers(value) {
-  return [...new Set((value.match(/\d+/g) || [])
+function sortNumbers(numbers) {
+  return [...new Set(numbers)]
     .map(Number)
-    .filter((num) => Number.isInteger(num) && num > 0 && num <= 90))]
+    .filter((number) => Number.isInteger(number) && number >= 1 && number <= 90)
     .sort((a, b) => a - b);
 }
 
-function mergeNumbers(existing, incoming) {
-  return [...new Set([...existing, ...incoming])]
-    .filter((num) => num > 0 && num <= 90)
-    .sort((a, b) => a - b);
+function uniqueNumbersInOrder(numbers) {
+  const seen = new Set();
+  const result = [];
+
+  (numbers || []).forEach((value) => {
+    const number = Number(value);
+    if (Number.isInteger(number) && number >= 1 && number <= 90 && !seen.has(number)) {
+      seen.add(number);
+      result.push(number);
+    }
+  });
+
+  return result;
 }
 
-function activeDetectedNumbers() {
-  return state.detectedNumbers.filter((num) => !state.removedDetectedNumbers.includes(num));
+function activeCards() {
+  return state.cards.slice(0, state.activeCardCount);
 }
 
-function expectedNumberCount() {
-  const cardCount = Number.parseInt(els.expectedCards.value, 10);
-  return Math.max(1, Number.isFinite(cardCount) ? cardCount : 1) * 15;
+function isCardReady(card) {
+  return card.numbers.length === NUMBERS_PER_CARD;
 }
 
-function updateExpectedStatus() {
-  const expected = expectedNumberCount();
-  const actual = activeDetectedNumbers().length;
-  const missing = Math.max(0, expected - actual);
-  const cards = Math.max(1, Number.parseInt(els.expectedCards.value, 10) || state.detectedCardCount || 1);
-
-  els.expectedStatus.className = `expected-status ${missing === 0 ? "good" : "warn"}`;
-  els.expectedStatus.textContent = missing === 0
-    ? `${cards} cartao(s), ${actual} numeros unicos`
-    : `${cards} cartao(s), ${actual}/${expected} numeros unicos`;
+function readyCardCount() {
+  return activeCards().filter(isCardReady).length;
 }
 
-function allNumbers() {
-  return [...new Set(state.cards.flatMap((card) => card.numbers))].sort((a, b) => a - b);
+function allCardsReady() {
+  return readyCardCount() === state.activeCardCount;
 }
 
 function playableNumbers() {
-  const numbers = els.levelSelect.value === "easy"
-    ? allNumbers().filter((num) => num <= 20)
-    : allNumbers();
-  if (!els.avoidRepeats.checked) return numbers;
-  return numbers.filter((num) => !state.called.includes(num));
+  return sortNumbers(activeCards().flatMap((card) => card.numbers));
 }
 
-function makeProblem(target) {
-  const level = els.levelSelect.value;
-
-  if (level === "easy" && target <= 20) {
-    return makeAddSubProblem(target, 20, 5);
-  }
-
-  return makeAddSubProblem(target, 90, 10);
+function availableNumbers() {
+  const called = new Set(state.called);
+  return playableNumbers().filter((number) => !called.has(number));
 }
 
-function makeAddSubProblem(target, maxFirst, maxTerm) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const termCount = randomInt(2, 5);
-    const rest = [];
-    let restTotal = 0;
+function saveState() {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        activeCardCount: state.activeCardCount,
+        cards: state.cards,
+        called: state.called,
+        history: state.history,
+        current: state.current,
+        gameStarted: state.gameStarted,
+        gameOver: state.gameOver,
+        winners: state.winners,
+      }),
+    );
+  } catch (error) {
+    console.warn("Nao foi possivel guardar o jogo.", error);
+  }
+}
 
-    for (let index = 1; index < termCount; index += 1) {
-      const sign = Math.random() > 0.45 ? 1 : -1;
-      const value = randomInt(1, maxTerm);
-      rest.push({ sign, value });
-      restTotal += sign * value;
-    }
+function loadState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (!saved) return;
 
-    const first = target - restTotal;
-    if (first >= 1 && first <= maxFirst) {
-      return [
-        `${first}`,
-        ...rest.map((term) => `${term.sign > 0 ? "+" : "-"} ${term.value}`),
-      ].join(" ");
+    state.activeCardCount = clampCardCount(saved.activeCardCount);
+    state.cards = Array.from({ length: MAX_CARDS }, (_, index) => {
+      const savedCard = saved.cards?.[index] || {};
+      return {
+        name: `Cartao ${index + 1}`,
+        numbers: sortNumbers(savedCard.numbers || []).slice(0, NUMBERS_PER_CARD),
+      };
+    });
+    state.called = uniqueNumbersInOrder(saved.called || []);
+    state.history = Array.isArray(saved.history)
+      ? saved.history
+          .filter((item) => item && Number.isInteger(item.answer))
+          .map((item) => ({
+            problem: String(item.problem || ""),
+            answer: item.answer,
+          }))
+      : [];
+    state.current =
+      saved.current && Number.isInteger(saved.current.answer)
+        ? {
+            problem: String(saved.current.problem || ""),
+            answer: saved.current.answer,
+            revealed: Boolean(saved.current.revealed),
+          }
+        : null;
+    state.gameStarted = Boolean(saved.gameStarted) && allCardsReady();
+    state.gameOver = Boolean(saved.gameOver) && state.gameStarted;
+    state.winners = Array.isArray(saved.winners)
+      ? saved.winners.filter((index) => Number.isInteger(index) && index >= 0 && index < MAX_CARDS)
+      : [];
+    if (!state.gameStarted) {
+      state.current = null;
+      state.gameOver = false;
+      state.winners = [];
     }
+  } catch (error) {
+    console.warn("Nao foi possivel recuperar o jogo guardado.", error);
+  }
+}
+
+function resetProgress(message = "") {
+  state.called = [];
+  state.history = [];
+  state.current = null;
+  state.gameStarted = false;
+  state.gameOver = false;
+  state.winners = [];
+  state.setupMessage = message;
+}
+
+function setActiveCardCount(count) {
+  state.activeCardCount = clampCardCount(count);
+  resetProgress("Escolhe 15 numeros em cada cartao ativo.");
+  render();
+}
+
+function toggleNumber(cardIndex, number) {
+  if (state.gameStarted) {
+    state.setupMessage = "Para mudar os cartoes, comeca um novo jogo.";
+    render();
+    return;
   }
 
-  return `${target}`;
+  const card = state.cards[cardIndex];
+  const selected = card.numbers.includes(number);
+
+  if (selected) {
+    card.numbers = card.numbers.filter((item) => item !== number);
+    state.setupMessage = "";
+  } else if (card.numbers.length < NUMBERS_PER_CARD) {
+    card.numbers = sortNumbers([...card.numbers, number]);
+    state.setupMessage = "";
+  } else {
+    state.setupMessage = `${card.name} ja tem 15 numeros. Tira um numero para escolher outro.`;
+  }
+
+  render();
+}
+
+function clearCard(cardIndex) {
+  if (state.gameStarted) {
+    state.setupMessage = "Para limpar cartoes, comeca um novo jogo.";
+    render();
+    return;
+  }
+
+  state.cards[cardIndex].numbers = [];
+  state.setupMessage = `${state.cards[cardIndex].name} ficou limpo.`;
+  render();
+}
+
+function startGame() {
+  if (!allCardsReady()) {
+    const missingCards = activeCards()
+      .filter((card) => !isCardReady(card))
+      .map((card) => `${card.name}: ${card.numbers.length}/15`)
+      .join(" | ");
+    state.setupMessage = `Ainda falta completar: ${missingCards}.`;
+    render();
+    return;
+  }
+
+  state.called = [];
+  state.history = [];
+  state.current = null;
+  state.gameStarted = true;
+  state.gameOver = false;
+  state.winners = [];
+  state.setupMessage = "Jogo iniciado.";
+  render();
+}
+
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
 }
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function makeEasyProblem(target) {
-  if (target <= 2) return `${target + 1} - 1`;
-
-  const options = [];
-  const upperAddend = Math.min(10, target - 1);
-  for (let left = 1; left <= upperAddend; left += 1) {
-    const right = target - left;
-    if (right >= 1 && right <= 10) options.push(`${left} + ${right}`);
-  }
-
-  for (let left = target + 1; left <= Math.min(20, target + 10); left += 1) {
-    options.push(`${left} - ${left - target}`);
-  }
-
-  return options[Math.floor(Math.random() * options.length)] || `${target} + 0`;
-}
-
-function updateCounts() {
-  const cardsLabel = state.cards.length === 1 ? "1 cartao" : `${state.cards.length} cartoes`;
-  const remaining = playableNumbers().length;
-  const remainingLabel = remaining === 1 ? "1 numero" : `${remaining} numeros`;
-
-  els.cardCount.textContent = cardsLabel;
-  els.remainingCount.textContent = remainingLabel;
-  els.playRound.disabled = state.cards.length === 0 || remaining === 0;
-  els.revealAnswer.disabled = !state.current;
-
-  if (state.cards.length === 0) {
-    els.statusText.textContent = "Adiciona pelo menos um cartao para comecar.";
-  } else if (remaining === 0) {
-    els.statusText.textContent = els.levelSelect.value === "easy"
-      ? "Neste nivel so saem numeros ate 20. Muda o nivel ou adiciona esses numeros."
-      : "Todos os numeros ja sairam. Podes limpar ou permitir repeticoes.";
+function addCandidate(candidates, problem, answer) {
+  if (answer >= 1 && answer <= 90) {
+    candidates.push(problem);
   }
 }
 
-function renderCards() {
-  els.cardsGrid.innerHTML = "";
+function buildOperation(target) {
+  const candidates = [];
 
-  if (state.cards.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "Os cartoes guardados aparecem aqui.";
-    els.cardsGrid.append(empty);
-    updateCounts();
-    return;
-  }
-
-  state.cards.forEach((card) => {
-    const node = els.template.content.firstElementChild.cloneNode(true);
-    const img = node.querySelector("img");
-    const title = node.querySelector("h3");
-    const summary = node.querySelector("p");
-    const remove = node.querySelector(".remove-card");
-    const grid = node.querySelector(".number-grid");
-
-    img.src = card.photo || "";
-    img.hidden = !card.photo;
-    title.textContent = card.name;
-    summary.textContent = `${card.numbers.length} numeros`;
-    remove.addEventListener("click", () => removeCard(card.id));
-
-    card.numbers.forEach((number) => {
-      const tile = document.createElement("button");
-      tile.type = "button";
-      tile.className = "number-tile";
-      tile.textContent = number;
-      tile.title = `Marcar ${number}`;
-      if (state.called.includes(number)) tile.classList.add("called");
-      if (state.current?.answer === number) tile.classList.add("current");
-      tile.addEventListener("click", () => toggleCalled(number));
-      grid.append(tile);
-    });
-
-    els.cardsGrid.append(node);
-  });
-
-  updateCounts();
-}
-
-function setOcrStatus(message, tone = "") {
-  els.ocrStatus.textContent = message;
-  els.ocrStatus.className = `ocr-status ${tone}`.trim();
-}
-
-function renderDetectedNumbers() {
-  els.detectedNumbers.innerHTML = "";
-
-  state.detectedNumbers.forEach((number) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "detected-chip";
-    chip.textContent = number;
-    chip.title = `Ignorar ${number}`;
-    if (state.removedDetectedNumbers.includes(number)) chip.classList.add("removed");
-    chip.addEventListener("click", () => toggleDetectedNumber(number));
-    els.detectedNumbers.append(chip);
-  });
-
-  els.saveCard.disabled = activeDetectedNumbers().length === 0;
-  updateExpectedStatus();
-}
-
-function toggleDetectedNumber(number) {
-  if (state.removedDetectedNumbers.includes(number)) {
-    state.removedDetectedNumbers = state.removedDetectedNumbers.filter((num) => num !== number);
-  } else {
-    state.removedDetectedNumbers.push(number);
-  }
-  renderDetectedNumbers();
-}
-
-function addNumberFromPhoto() {
-  const value = window.prompt("Que numero queres confirmar nesta foto?");
-  if (!value) return;
-
-  const numbers = parseNumbers(value);
-  if (numbers.length === 0) {
-    setOcrStatus("Esse numero nao e valido. Usa numeros entre 1 e 90.", "warn");
-    return;
-  }
-
-  state.detectedNumbers = mergeNumbers(state.detectedNumbers, numbers);
-  state.removedDetectedNumbers = state.removedDetectedNumbers
-    .filter((number) => !numbers.includes(number));
-  renderDetectedNumbers();
-  setOcrStatus(`Numero ${numbers.join(", ")} confirmado pela foto.`, "good");
-}
-
-function bindPhotoClick(item) {
-  const image = item.querySelector("img");
-  image.addEventListener("click", addNumberFromPhoto);
-  image.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      addNumberFromPhoto();
-    }
-  });
-}
-
-async function recognizeNumbersFromPhoto(photoDataUrl) {
-  if (!window.Tesseract) {
-    setOcrStatus("Nao consegui carregar o leitor automatico. Confirma a ligacao a internet.", "warn");
-    return;
-  }
-
-  setOcrStatus("A ler numeros da foto...", "busy");
-
-  try {
-    const cards = await prepareCardImagesForOcr(photoDataUrl);
-    const cardNumbers = [];
-
-    state.detectedCardCount = Math.max(state.detectedCardCount, cards.length);
-    els.expectedCards.value = String(state.detectedCardCount);
-
-    for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
-      const cellCandidates = new Map();
-      const looseCandidates = new Map();
-
-      for (let index = 0; index < cards[cardIndex].images.length; index += 1) {
-        const variant = cards[cardIndex].images[index];
-        const result = await window.Tesseract.recognize(variant.src, "eng", {
-          tessedit_char_whitelist: "0123456789",
-          tessedit_pageseg_mode: "6",
-          logger: (progress) => {
-            if (progress.status === "recognizing text") {
-              const percent = Math.round((progress.progress || 0) * 100);
-              setOcrStatus(`Cartao ${cardIndex + 1}/${cards.length}: leitura ${index + 1}/${cards[cardIndex].images.length}, ${percent}%`, "busy");
-            }
-          },
-        });
-
-        collectGridOcrCandidates(cellCandidates, looseCandidates, result, variant);
-      }
-
-      cardNumbers.push(selectCardNumbers(cellCandidates, looseCandidates));
-    }
-
-    const numbers = cardNumbers.flat().length > 0
-      ? cardNumbers.flat()
-      : [];
-    state.detectedNumbers = mergeNumbers(state.detectedNumbers, numbers);
-    renderDetectedNumbers();
-
-    if (state.detectedNumbers.length === 0) {
-      setOcrStatus("Nao encontrei numeros validos na grelha. Tenta uma foto mais direita e perto dos cartoes.", "warn");
-      return;
-    }
-
-    const expected = expectedNumberCount();
-    const detected = state.detectedNumbers.length;
-    const tone = detected >= expected ? "good" : "warn";
-    const message = detected >= expected
-      ? `Detetei ${detected} numeros validos pela grelha em ${state.detectedCardCount} cartao(s).`
-      : `Detetei ${detected} numeros validos pela grelha em ${state.detectedCardCount} cartao(s). Toca na foto para acrescentar os que faltam.`;
-    setOcrStatus(message, tone);
-  } catch (error) {
-    setOcrStatus("Nao consegui ler esta foto. Tenta aproximar mais o cartao.", "warn");
-  }
-}
-
-function collectGridOcrCandidates(cellCandidates, looseCandidates, result, variant) {
-  const words = Array.isArray(result.data.words) ? result.data.words : [];
-
-  words.forEach((word) => {
-    const bbox = word.bbox || word.symbols?.[0]?.bbox;
-    const numbers = parseNumbers(word.text);
-    if (numbers.length === 0) return;
-
-    numbers.forEach((number) => {
-      addLooseCandidate(looseCandidates, number, word.confidence || 0);
-    });
-
-    if (!bbox) return;
-    const cell = gridCellFromBox(bbox, variant.width, variant.height);
-    if (!cell) return;
-
-    numbers
-      .filter((number) => numberFitsColumn(number, cell.col))
-      .forEach((number) => addCellCandidate(cellCandidates, cell, number, word.confidence || 0, bbox));
-  });
-
-  if (words.length === 0) {
-    parseNumbers(result.data.text || "").forEach((number) => {
-      addLooseCandidate(looseCandidates, number, 35);
-    });
-  }
-}
-
-function addLooseCandidate(candidates, number, confidence) {
-  const previous = candidates.get(number) || { number, count: 0, confidence: 0 };
-  previous.count += 1;
-  previous.confidence += confidence;
-  candidates.set(number, previous);
-}
-
-function addCellCandidate(cellCandidates, cell, number, confidence, bbox) {
-  const key = `${cell.row}-${cell.col}`;
-  const candidates = cellCandidates.get(key) || new Map();
-  const previous = candidates.get(number) || {
-    number,
-    row: cell.row,
-    col: cell.col,
-    count: 0,
-    confidence: 0,
-    sizeScore: 0,
-  };
-  const boxHeight = Math.max(1, bbox.y1 - bbox.y0);
-  const cellHeight = Math.max(1, cell.height);
-  if (boxHeight < cellHeight * 0.2) return;
-  const relativeCenterY = ((bbox.y0 + bbox.y1) / 2 - cell.top) / cellHeight;
-  const mainNumberBonus = boxHeight > cellHeight * 0.28 && relativeCenterY < 0.72 ? 35 : 0;
-  previous.count += 1;
-  previous.confidence += confidence;
-  previous.sizeScore += mainNumberBonus;
-  candidates.set(number, previous);
-  cellCandidates.set(key, candidates);
-}
-
-function selectCardNumbers(cellCandidates, looseCandidates) {
-  const byCell = [...cellCandidates.values()]
-    .map((candidates) => [...candidates.values()]
-      .map((item) => ({
-        ...item,
-        score: item.count * 120 + item.confidence + item.sizeScore,
-      }))
-      .sort((a, b) => b.score - a.score)[0])
-    .filter(Boolean)
-    .sort((a, b) => b.score - a.score);
-
-  if (byCell.length > 0) {
-    return byCell
-      .slice(0, 15)
-      .map((item) => item.number)
-      .sort((a, b) => a - b);
-  }
-
-  const fallback = [...looseCandidates.values()]
-    .map((item) => ({
-      number: item.number,
-      count: item.count,
-      score: item.count * 100 + item.confidence,
-    }))
-    .filter((item) => item.number >= 10 && item.count >= 2)
-    .sort((a, b) => b.score - a.score);
-
-  return fallback
-    .slice(0, 15)
-    .map((item) => item.number)
-    .sort((a, b) => a - b);
-}
-
-function gridCellFromBox(bbox, width, height) {
-  const bounds = gridBounds(width, height);
-  const centerX = (bbox.x0 + bbox.x1) / 2;
-  const centerY = (bbox.y0 + bbox.y1) / 2;
-  if (centerX < bounds.left || centerX > bounds.right || centerY < bounds.top || centerY > bounds.bottom) {
-    return null;
-  }
-
-  const cellWidth = (bounds.right - bounds.left) / 9;
-  const cellHeight = (bounds.bottom - bounds.top) / 3;
-  const col = Math.floor((centerX - bounds.left) / cellWidth);
-  const row = Math.floor((centerY - bounds.top) / cellHeight);
-  if (col < 0 || col > 8 || row < 0 || row > 2) return null;
-
-  return {
-    row,
-    col,
-    top: bounds.top + row * cellHeight,
-    height: cellHeight,
-  };
-}
-
-function gridBounds(width, height) {
-  return {
-    left: width * 0.075,
-    right: width * 0.93,
-    top: height * 0.17,
-    bottom: height * 0.82,
-  };
-}
-
-function numberFitsColumn(number, col) {
-  if (col === 0) return number >= 1 && number <= 9;
-  const min = col * 10;
-  const max = col === 8 ? 90 : col * 10 + 9;
-  return number >= min && number <= max;
-}
-
-function prepareCardImagesForOcr(photoDataUrl) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.addEventListener("load", () => {
-      const maxSide = 2200;
-      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(image.width * scale);
-      canvas.height = Math.round(image.height * scale);
-
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const original = context.getImageData(0, 0, canvas.width, canvas.height);
-      const bands = detectCardBands(original, canvas.width, canvas.height);
-      const regions = bands.length > 0
-        ? bands.map((band) => cropImageData(original, canvas.width, canvas.height, 0, band.y, canvas.width, band.height))
-        : [original];
-
-      resolve(regions.map((region) => ({
-        images: [
-          makeOcrVariant(region.data, region.width, region.height, "contrast"),
-          makeOcrVariant(region.data, region.width, region.height, "red-green"),
-          makeOcrVariant(region.data, region.width, region.height, "dark-text"),
-        ],
-      })));
-    });
-    image.addEventListener("error", reject);
-    image.src = photoDataUrl;
-  });
-}
-
-function detectCardBands(source, width, height) {
-  const minBandHeight = Math.round(height * 0.11);
-  const rows = [];
-
-  for (let y = 0; y < height; y += 1) {
-    let white = 0;
-    for (let x = 0; x < width; x += 4) {
-      const index = (y * width + x) * 4;
-      const red = source.data[index];
-      const green = source.data[index + 1];
-      const blue = source.data[index + 2];
-      if (red > 185 && green > 185 && blue > 185) white += 1;
-    }
-    rows.push(white / Math.ceil(width / 4));
-  }
-
-  const threshold = 0.18;
-  const bands = [];
-  let start = -1;
-  for (let y = 0; y < rows.length; y += 1) {
-    if (rows[y] > threshold && start === -1) start = y;
-    if ((rows[y] <= threshold || y === rows.length - 1) && start !== -1) {
-      const end = y;
-      if (end - start >= minBandHeight) {
-        const pad = Math.round((end - start) * 0.08);
-        bands.push({
-          y: Math.max(0, start - pad),
-          height: Math.min(height - Math.max(0, start - pad), end - start + pad * 2),
-        });
-      }
-      start = -1;
+  for (let factor = 1; factor <= 10; factor += 1) {
+    const other = target / factor;
+    if (Number.isInteger(other) && other >= 1 && other <= 10) {
+      addCandidate(candidates, `${factor} x ${other}`, target);
     }
   }
 
-  const merged = [];
-  const mergeGap = Math.round(height * 0.025);
-  bands.forEach((band) => {
-    const previous = merged[merged.length - 1];
-    if (previous && band.y - (previous.y + previous.height) <= mergeGap) {
-      const end = Math.max(previous.y + previous.height, band.y + band.height);
-      previous.height = end - previous.y;
-    } else {
-      merged.push({ ...band });
+  for (let index = 0; index < 10; index += 1) {
+    const addend = randomInt(0, Math.min(10, target));
+    addCandidate(candidates, `${addend} + ${target - addend}`, target);
+  }
+
+  for (const addend of [10, 20, 30, 40, 50]) {
+    if (target > addend) {
+      addCandidate(candidates, `${addend} + ${target - addend}`, target);
     }
-  });
+  }
 
-  return merged
-    .filter((band) => (
-      band.height >= minBandHeight
-      && band.height <= height * 0.32
-      && band.height >= width * 0.35
-    ))
-    .sort((a, b) => b.height - a.height)
-    .slice(0, 20)
-    .sort((a, b) => a.y - b.y);
-}
-
-function cropImageData(source, sourceWidth, sourceHeight, x, y, width, height) {
-  const canvas = document.createElement("canvas");
-  canvas.width = sourceWidth;
-  canvas.height = sourceHeight;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.putImageData(source, 0, 0);
-  return context.getImageData(x, y, width, height);
-}
-
-function makeOcrVariant(source, width, height, mode) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width * 2;
-  canvas.height = height * 2;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  const imageData = new ImageData(new Uint8ClampedArray(source), width, height);
-
-  for (let index = 0; index < imageData.data.length; index += 4) {
-    const red = imageData.data[index];
-    const green = imageData.data[index + 1];
-    const blue = imageData.data[index + 2];
-    const gray = red * 0.299 + green * 0.587 + blue * 0.114;
-    let ink = false;
-
-    if (mode === "red-green") {
-      const redInk = red > green * 1.18 && red > blue * 1.18 && red > 70;
-      const greenInk = green > red * 1.08 && green > blue * 1.08 && green > 55;
-      ink = redInk || greenInk;
-    } else if (mode === "dark-text") {
-      ink = gray < 135;
-    } else {
-      ink = gray < 170;
+  for (let subtrahend = 1; subtrahend <= 10; subtrahend += 1) {
+    if (target + subtrahend <= 90) {
+      addCandidate(candidates, `${target + subtrahend} - ${subtrahend}`, target);
     }
-
-    const output = ink ? 0 : 255;
-    imageData.data[index] = output;
-    imageData.data[index + 1] = output;
-    imageData.data[index + 2] = output;
   }
 
-  const sourceCanvas = document.createElement("canvas");
-  sourceCanvas.width = width;
-  sourceCanvas.height = height;
-  sourceCanvas.getContext("2d").putImageData(imageData, 0, 0);
-  context.imageSmoothingEnabled = false;
-  context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
-  return {
-    src: canvas.toDataURL("image/png"),
-    width: canvas.width,
-    height: canvas.height,
-    mode,
-  };
+  for (let index = 0; index < 14; index += 1) {
+    const first = randomInt(0, 10);
+    const second = randomInt(0, 10);
+    const third = target - first - second;
+    if (third >= 0 && third <= 90) {
+      addCandidate(candidates, `${first} + ${second} + ${third}`, target);
+    }
+  }
+
+  for (let index = 0; index < 18; index += 1) {
+    const plus = randomInt(1, 10);
+    const minus = randomInt(1, 10);
+    const start = target - plus + minus;
+    if (start >= 0 && start <= 90 && start + plus >= minus) {
+      addCandidate(candidates, `${start} + ${plus} - ${minus}`, target);
+    }
+  }
+
+  for (let index = 0; index < 18; index += 1) {
+    const minus = randomInt(1, 10);
+    const plus = randomInt(1, 10);
+    const start = target + minus - plus;
+    if (start >= minus && start <= 90) {
+      addCandidate(candidates, `${start} - ${minus} + ${plus}`, target);
+    }
+  }
+
+  if (target < 90) {
+    addCandidate(candidates, `${target + 1} - 1`, target);
+  }
+
+  if (target > 1) {
+    addCandidate(candidates, `${target - 1} + 1`, target);
+  }
+
+  return randomItem(candidates);
 }
 
-function renderQuestion() {
-  if (!state.current) {
-    els.question.textContent = "?";
-    els.answer.hidden = true;
-    els.answer.textContent = "";
+function newOperation() {
+  if (!state.gameStarted || state.gameOver) return;
+
+  if (state.current && !state.current.revealed) {
     return;
   }
 
-  els.question.textContent = `${state.current.problem} = ?`;
-  els.answer.textContent = `Solucao: ${state.current.answer}`;
-  els.answer.hidden = !state.current.revealed;
-}
-
-function removeCard(cardId) {
-  state.cards = state.cards.filter((card) => card.id !== cardId);
-  const stillVisible = allNumbers();
-  state.called = state.called.filter((number) => stillVisible.includes(number));
-  saveState();
-  renderCards();
-}
-
-function toggleCalled(number) {
-  if (state.called.includes(number)) {
-    state.called = state.called.filter((called) => called !== number);
-  } else {
-    state.called.push(number);
-  }
-  saveState();
-  renderCards();
-}
-
-function addCard(event) {
-  event.preventDefault();
-
-  const numbers = activeDetectedNumbers();
-  if (numbers.length === 0) {
-    els.statusText.textContent = "Escolhe uma foto e espera que os numeros sejam detetados.";
+  const available = availableNumbers();
+  if (!available.length) {
+    state.gameOver = true;
+    state.setupMessage = "Ja sairam todos os numeros dos cartoes.";
+    render();
     return;
   }
 
-  state.cards.push({
-    id: crypto.randomUUID(),
-    name: els.cardName.value.trim() || `Cartoes ${state.cards.length + 1}`,
-    numbers,
-    photo: state.pendingPhotos[0] || state.pendingPhoto,
-  });
-
-  state.pendingPhoto = "";
-  state.pendingPhotos = [];
-  state.detectedNumbers = [];
-  state.detectedCardCount = 1;
-  state.removedDetectedNumbers = [];
-  els.cardForm.reset();
-  resetPhotoInputs();
-  els.photoPreview.innerHTML = "";
-  setOcrStatus("Escolhe uma foto para eu ler os numeros.");
-  els.expectedCards.value = "1";
-  renderDetectedNumbers();
-  els.statusText.textContent = "Cartao guardado. Ja podes iniciar a jogada.";
-  saveState();
-  renderCards();
-}
-
-async function handlePhotos(event) {
-  const files = [...event.target.files];
-  if (files.length === 0) return;
-
-  state.pendingPhoto = "";
-  state.pendingPhotos = [];
-  state.detectedNumbers = [];
-  state.removedDetectedNumbers = [];
-  renderDetectedNumbers();
-  els.photoPreview.innerHTML = "";
-
-  if (!els.cardName.value.trim()) {
-    els.cardName.value = files.length === 1
-      ? files[0].name.replace(/\.[^.]+$/, "")
-      : `Cartoes ${state.cards.length + 1}`;
-  }
-
-  state.detectedCardCount = files.length;
-  els.expectedCards.value = String(files.length);
-  updateExpectedStatus();
-
-  for (let index = 0; index < files.length; index += 1) {
-    const file = files[index];
-    const photo = await readFileAsDataUrl(file);
-    state.pendingPhoto = photo;
-    state.pendingPhotos.push(photo);
-
-    const item = document.createElement("div");
-    item.className = "photo-item";
-    item.innerHTML = `
-      <img src="${photo}" alt="Foto do cartao selecionado" tabindex="0" />
-      <div>
-        <strong>${file.name}</strong>
-        <small>A procurar numeros de 1 a 90. Toca na foto para confirmar outro numero.</small>
-      </div>
-    `;
-    els.photoPreview.append(item);
-    bindPhotoClick(item);
-
-    setOcrStatus(`A ler foto ${index + 1}/${files.length}...`, "busy");
-    await recognizeNumbersFromPhoto(photo);
-  }
-
-  event.target.value = "";
-}
-
-function resetPhotoInputs() {
-  els.cardPhotos.value = "";
-  els.cameraPhotos.value = "";
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => resolve(reader.result));
-    reader.addEventListener("error", reject);
-    reader.readAsDataURL(file);
-  });
-}
-
-function startGame() {
-  if (state.cards.length === 0) {
-    els.statusText.textContent = "Primeiro guarda os numeros de um cartao.";
-    return;
-  }
-
-  state.current = null;
-  els.statusText.textContent = "Tudo pronto. Clica em Jogar para sair uma conta.";
-  saveState();
-  renderQuestion();
-  renderCards();
-}
-
-function playRound() {
-  const numbers = playableNumbers();
-  if (numbers.length === 0) {
-    els.statusText.textContent = "Nao ha mais numeros disponiveis neste modo.";
-    updateCounts();
-    return;
-  }
-
-  const answer = numbers[Math.floor(Math.random() * numbers.length)];
+  const answer = randomItem(available);
   state.current = {
+    problem: buildOperation(answer),
     answer,
-    problem: makeProblem(answer),
     revealed: false,
   };
-
-  els.statusText.textContent = "Resolve a conta. Quando acabares, carrega em Ver solucao.";
-  saveState();
-  renderQuestion();
-  renderCards();
+  render();
 }
 
-function revealAnswer() {
-  if (!state.current) return;
+function findWinners() {
+  const called = new Set(state.called);
+  return activeCards()
+    .map((card, index) => ({ card, index }))
+    .filter(({ card }) => card.numbers.every((number) => called.has(number)))
+    .map(({ index }) => index);
+}
+
+function showAnswer() {
+  if (!state.current || state.current.revealed || state.gameOver) return;
 
   state.current.revealed = true;
+
   if (!state.called.includes(state.current.answer)) {
     state.called.push(state.current.answer);
+    state.history.push({
+      problem: state.current.problem,
+      answer: state.current.answer,
+    });
   }
 
-  els.statusText.textContent = "Agora podes confirmar se acertaste.";
+  state.winners = findWinners();
+  if (state.winners.length) {
+    state.gameOver = true;
+  }
+
+  render();
+}
+
+function newGame({ keepCards = true } = {}) {
+  if (!keepCards) {
+    state.cards = Array.from({ length: MAX_CARDS }, (_, index) => ({
+      name: `Cartao ${index + 1}`,
+      numbers: [],
+    }));
+    state.activeCardCount = 1;
+  }
+
+  resetProgress(keepCards ? "Novo jogo pronto com os mesmos cartoes." : "Escolhe os cartoes para comecar.");
+  render();
+}
+
+function chooseCards() {
+  resetProgress("Podes ajustar os cartoes e voltar a iniciar.");
+  document.querySelector("#setup-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  render();
+}
+
+function renderCardCountPicker() {
+  els.cardCountPicker.innerHTML = "";
+
+  for (let count = 1; count <= MAX_CARDS; count += 1) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `segment-button${count === state.activeCardCount ? " active" : ""}`;
+    button.dataset.cardCount = String(count);
+    button.textContent = String(count);
+    button.setAttribute("aria-pressed", String(count === state.activeCardCount));
+    button.disabled = state.gameStarted;
+    button.addEventListener("click", () => setActiveCardCount(count));
+    els.cardCountPicker.append(button);
+  }
+}
+
+function renderSetupCards() {
+  els.setupCards.innerHTML = "";
+
+  activeCards().forEach((card, cardIndex) => {
+    const cardElement = document.createElement("article");
+    cardElement.className = `setup-card${isCardReady(card) ? " ready" : ""}`;
+
+    const header = document.createElement("div");
+    header.className = "card-title";
+
+    const titleBlock = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = card.name;
+    const status = document.createElement("div");
+    status.className = `card-status${isCardReady(card) ? " ready" : ""}`;
+    status.textContent = `${card.numbers.length}/15 numeros selecionados`;
+    titleBlock.append(title, status);
+
+    const clearButton = document.createElement("button");
+    clearButton.type = "button";
+    clearButton.className = "mini-button";
+    clearButton.dataset.clearCard = String(cardIndex);
+    clearButton.textContent = "Limpar cartao";
+    clearButton.disabled = state.gameStarted || card.numbers.length === 0;
+    clearButton.addEventListener("click", () => clearCard(cardIndex));
+
+    header.append(titleBlock, clearButton);
+
+    const grid = document.createElement("div");
+    grid.className = "number-picker";
+    grid.setAttribute("aria-label", `Numeros do ${card.name}`);
+
+    allNumbers.forEach((number) => {
+      const selected = card.numbers.includes(number);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `number-button${selected ? " selected" : ""}`;
+      button.dataset.card = String(cardIndex);
+      button.dataset.number = String(number);
+      button.textContent = String(number);
+      button.setAttribute("aria-pressed", String(selected));
+      button.disabled = state.gameStarted || (!selected && card.numbers.length >= NUMBERS_PER_CARD);
+      button.addEventListener("click", () => toggleNumber(cardIndex, number));
+      grid.append(button);
+    });
+
+    cardElement.append(header, grid);
+    els.setupCards.append(cardElement);
+  });
+}
+
+function renderSetupStatus() {
+  const ready = readyCardCount();
+  els.setupStatus.textContent = `${ready}/${state.activeCardCount} prontos`;
+  els.startGame.disabled = !allCardsReady() || state.gameStarted;
+}
+
+function renderGameBoard() {
+  const available = availableNumbers().length;
+  els.remainingCount.textContent = state.gameStarted ? `${available} por sair` : "0 numeros";
+
+  if (state.winners.length) {
+    const names = state.winners.map((index) => state.cards[index].name);
+    const message =
+      names.length === 1
+        ? `Bingo! O ${names[0]} esta completo.`
+        : `Bingo! ${names.join(" e ")} estao completos.`;
+    els.winnerBanner.hidden = false;
+    els.winnerBanner.textContent = message;
+  } else {
+    els.winnerBanner.hidden = true;
+    els.winnerBanner.textContent = "";
+  }
+
+  if (!state.gameStarted) {
+    els.statusText.textContent = allCardsReady()
+      ? "Tudo pronto. Carrega em Iniciar jogo."
+      : state.setupMessage || "Escolhe 15 numeros em cada cartao para comecar.";
+  } else if (state.gameOver && state.winners.length) {
+    els.statusText.textContent = "Jogo terminado. Podes comecar um novo jogo.";
+  } else if (state.gameOver) {
+    els.statusText.textContent = "Ja sairam todos os numeros.";
+  } else if (!state.current) {
+    els.statusText.textContent = "Carrega em Nova operacao.";
+  } else if (state.current.revealed) {
+    els.statusText.textContent = "Resultado marcado nos cartoes.";
+  } else {
+    els.statusText.textContent = "Resolve a conta. O resultado esta escondido.";
+  }
+
+  els.question.textContent = state.current ? state.current.problem : "?";
+  els.answer.hidden = !state.current?.revealed;
+  els.answer.textContent = state.current?.revealed ? `Resultado: ${state.current.answer}` : "";
+
+  const waitingForReveal = Boolean(state.current && !state.current.revealed);
+  els.newOperation.disabled = !state.gameStarted || state.gameOver || waitingForReveal || available === 0;
+  els.showAnswer.disabled = !state.gameStarted || state.gameOver || !waitingForReveal;
+}
+
+function renderPlayCards() {
+  els.playCards.innerHTML = "";
+
+  if (!state.gameStarted && !activeCards().some((card) => card.numbers.length)) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Os cartoes aparecem aqui depois de escolheres os numeros.";
+    els.playCards.append(empty);
+    return;
+  }
+
+  const called = new Set(state.called);
+  activeCards().forEach((card, cardIndex) => {
+    const missing = card.numbers.filter((number) => !called.has(number)).length;
+    const complete = card.numbers.length === NUMBERS_PER_CARD && missing === 0;
+    const article = document.createElement("article");
+    article.className = `play-card${complete ? " complete" : ""}`;
+
+    const header = document.createElement("div");
+    header.className = "play-card-head";
+    const title = document.createElement("h3");
+    title.textContent = card.name;
+    const detail = document.createElement("p");
+    detail.textContent =
+      card.numbers.length === NUMBERS_PER_CARD
+        ? complete
+          ? "Completo"
+          : `Faltam ${missing}`
+        : `${card.numbers.length}/15 selecionados`;
+    header.append(title, detail);
+
+    const grid = document.createElement("div");
+    grid.className = "play-number-grid";
+    sortNumbers(card.numbers).forEach((number) => {
+      const item = document.createElement("span");
+      const isCurrent = state.current?.revealed && state.current.answer === number;
+      item.className = `play-number${called.has(number) ? " called" : ""}${isCurrent ? " current" : ""}`;
+      item.textContent = String(number);
+      grid.append(item);
+    });
+
+    if (!card.numbers.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "Ainda sem numeros.";
+      article.append(header, empty);
+    } else {
+      article.append(header, grid);
+    }
+
+    article.dataset.playCard = String(cardIndex);
+    els.playCards.append(article);
+  });
+}
+
+function renderHistory() {
+  els.calledNumbers.innerHTML = "";
+  els.historyList.innerHTML = "";
+
+  if (!state.called.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Os resultados das operacoes aparecem aqui.";
+    els.calledNumbers.append(empty);
+  } else {
+    state.called.forEach((number) => {
+      const chip = document.createElement("span");
+      const isCurrent = state.current?.revealed && state.current.answer === number;
+      chip.className = `called-chip${isCurrent ? " current" : ""}`;
+      chip.textContent = String(number);
+      els.calledNumbers.append(chip);
+    });
+  }
+
+  if (!state.history.length) return;
+
+  state.history.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "history-row";
+
+    const problem = document.createElement("strong");
+    problem.textContent = `${index + 1}. ${item.problem}`;
+    const answer = document.createElement("span");
+    answer.textContent = `= ${item.answer}`;
+
+    row.append(problem, answer);
+    els.historyList.append(row);
+  });
+}
+
+function render() {
+  renderCardCountPicker();
+  renderSetupCards();
+  renderSetupStatus();
+  renderGameBoard();
+  renderPlayCards();
+  renderHistory();
   saveState();
-  renderQuestion();
-  renderCards();
 }
 
-function resetAll() {
-  const confirmed = window.confirm("Limpar cartoes, jogadas e marcacoes?");
-  if (!confirmed) return;
-
-  state.cards = [];
-  state.called = [];
-  state.current = null;
-  state.pendingPhoto = "";
-  state.pendingPhotos = [];
-  state.detectedNumbers = [];
-  state.removedDetectedNumbers = [];
-  localStorage.removeItem(storageKey);
-  els.cardForm.reset();
-  resetPhotoInputs();
-  els.photoPreview.innerHTML = "";
-  setOcrStatus("Escolhe uma foto para eu ler os numeros.");
-  renderDetectedNumbers();
-  els.statusText.textContent = "Tudo limpo. Adiciona novos cartoes.";
-  renderQuestion();
-  renderCards();
-}
-
-els.cardPhotos.addEventListener("change", handlePhotos);
-els.cameraPhotos.addEventListener("change", handlePhotos);
-els.cardForm.addEventListener("submit", addCard);
 els.startGame.addEventListener("click", startGame);
-els.playRound.addEventListener("click", playRound);
-els.revealAnswer.addEventListener("click", revealAnswer);
-els.resetAll.addEventListener("click", resetAll);
-els.levelSelect.addEventListener("change", updateCounts);
-els.avoidRepeats.addEventListener("change", updateCounts);
-els.expectedCards.addEventListener("input", updateExpectedStatus);
+els.newOperation.addEventListener("click", newOperation);
+els.showAnswer.addEventListener("click", showAnswer);
+els.newGame.addEventListener("click", () => newGame());
+els.newGameTop.addEventListener("click", () => newGame());
+els.chooseCards?.addEventListener("click", chooseCards);
+els.chooseCardsTop?.addEventListener("click", chooseCards);
 
 loadState();
-renderQuestion();
-renderDetectedNumbers();
-renderCards();
+render();
