@@ -101,12 +101,12 @@ button {
 }
 
 .cards-area,
-history-area {
+.history-area {
   margin: 0 clamp(1rem, 4vw, 3rem) 1rem;
 }
 
 .history-area {
-  margin: 0 clamp(1rem, 4vw, 3rem) 2rem;
+  margin-bottom: 2rem;
 }
 
 .section-heading {
