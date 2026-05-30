@@ -257,8 +257,10 @@ button:disabled {
 
 .number-picker {
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(10, minmax(2.35rem, 1fr));
   gap: 0.32rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
 }
 
 .number-button,
@@ -268,10 +270,16 @@ button:disabled {
   place-items: center;
   border-radius: 8px;
   font-weight: 900;
+  line-height: 1;
+  padding: 0;
+  text-align: center;
 }
 
 .number-button {
-  min-height: clamp(2.1rem, 8vw, 2.75rem);
+  appearance: none;
+  -webkit-appearance: none;
+  aspect-ratio: 1;
+  min-width: 0;
   border: 1px solid #c8d1df;
   background: #f9fbff;
   color: var(--ink);
@@ -472,7 +480,7 @@ button:disabled {
   }
 
   .number-button {
-    min-height: 2.05rem;
+    min-height: 0;
     border-radius: 6px;
     font-size: 0.85rem;
   }
