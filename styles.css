@@ -469,6 +469,37 @@ button:disabled {
 @media (max-width: 620px) {
   .app-header {
     flex-direction: column;
+    padding: 1.2rem 0.55rem 0.6rem;
+  }
+
+  .app-header h1 {
+    font-size: clamp(1.9rem, 11vw, 2.7rem);
+  }
+
+  .app-shell {
+    padding: 0.55rem;
+  }
+
+  .setup-panel,
+  .game-panel,
+  .cards-area,
+  .history-area {
+    padding: 0.55rem;
+  }
+
+  .cards-area,
+  .history-area {
+    margin-right: 0.55rem;
+    margin-left: 0.55rem;
+  }
+
+  .setup-card,
+  .play-card {
+    padding: 0.45rem;
+  }
+
+  .card-count-panel {
+    padding: 0.6rem;
   }
 
   .game-actions {
@@ -476,12 +507,15 @@ button:disabled {
   }
 
   .number-picker {
-    gap: 0.24rem;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: clamp(0.1rem, 0.55vw, 0.16rem);
+    overflow-x: visible;
+    padding-bottom: 0;
   }
 
   .number-button {
     min-height: 0;
     border-radius: 6px;
-    font-size: 0.85rem;
+    font-size: clamp(0.68rem, 2.8vw, 0.9rem);
   }
 }
